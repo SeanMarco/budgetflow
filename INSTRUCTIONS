@@ -1,0 +1,18 @@
+📌 Instructions
+
+All project files are included in this repository.
+
+This project uses PHP, so make sure you have XAMPP installed and running (Apache & MySQL).
+The SQL file is provided inside the backend folder — import it using phpMyAdmin.
+Place the project folder inside your htdocs directory and name it budgetflow_api.
+
+Start Apache and MySQL in XAMPP, then run the project in your browser:
+
+http://localhost/budgetflow_api
+⚙️ Setup Steps
+Install and open XAMPP
+Start Apache and MySQL
+Import the database from the backend folder
+Move and rename the project folder to budgetflow_api inside htdocs
+Open in browser and you're good to go
+
