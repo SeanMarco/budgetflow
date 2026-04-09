@@ -1,17 +1,71 @@
 # budgetflow
 
-A new Flutter project.
+BudgetFlow 📊
 
-## Getting Started
+A personal finance mobile app designed to help users track income and expenses, manage budgets, and visualize spending through insightful analytics.
 
-This project is a starting point for a Flutter application.
+Features 📊 Expense & Income Tracking
 
-A few resources to get you started if this is your first Flutter project:
+Record daily expenses and income easily.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Categorize transactions (e.g., food, transport, bills).
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Edit or delete entries anytime.
+
+💼 Budget Management
+
+Set monthly or weekly budgets.
+
+Track spending against limits.
+
+Receive alerts when nearing budget thresholds.
+
+📈 Reports & Analytics
+
+Visualize spending with charts and graphs.
+
+View category-wise breakdowns.
+
+Track financial trends over time.
+
+🔁 Recurring Transactions
+
+Automate regular expenses and income.
+
+Set reminders for bills and subscriptions.
+
+🏦 Multi-Account Support
+
+Manage cash, bank accounts, and e-wallets.
+
+Transfer funds between accounts.
+
+🔍 Search & Filters
+
+Quickly find transactions by date, category, or keyword.
+
+Apply filters for better tracking.
+
+🔐 Security & Privacy
+
+Secure authentication with PIN or biometrics.
+
+Data protection and privacy-focused design.
+
+☁️ Backup & Sync
+
+Backup data locally or to the cloud.
+
+Restore your data anytime.
+
+🎯 Savings Goals
+
+Set financial goals and track progress.
+
+Stay motivated to save more.
+
+🌐 Multi-Currency Support
+
+Handle different currencies effortlessly.
+
+Ideal for travelers and freelancers.
