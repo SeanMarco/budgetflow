@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:device_preview/device_preview.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
 import 'AppState.dart';
 import 'HomePage.dart';
+import 'api_service.dart';
 
 ValueNotifier<bool> isDarkMode = ValueNotifier(false);
 final AppState _appState = AppState();
@@ -97,11 +96,8 @@ class BudgetFlowApp extends StatelessWidget {
                 themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
                 theme: _buildTheme(Brightness.light),
                 darkTheme: _buildTheme(Brightness.dark),
-                initialRoute: '/auth',
-                routes: {
-                  '/auth': (context) => const AuthPage(),
-                  '/settings': (context) => const SettingsPage(),
-                },
+                home: const SplashGate(),
+                routes: {'/settings': (context) => const SettingsPage()},
               ),
             );
           },
@@ -509,10 +505,7 @@ class _AuthPageState extends State<AuthPage>
 
   Widget _socialBtn(String label, IconData icon) => Expanded(
     child: GestureDetector(
-      onTap: () => Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const HomePage(username: "User")),
-      ),
+      onTap: () => _snack("$label login coming soon"),
       child: Container(
         height: 52,
         decoration: BoxDecoration(
@@ -553,6 +546,7 @@ class _AuthPageState extends State<AuthPage>
     final password = _password.text;
     final firstName = _first.text.trim();
     final lastName = _last.text.trim();
+
     if (email.isEmpty || password.isEmpty) {
       _snack("Fill in all fields");
       return;
@@ -569,37 +563,33 @@ class _AuthPageState extends State<AuthPage>
       _snack("Enter a valid email");
       return;
     }
+
     setState(() => _loading = true);
+
     try {
-      final url = Uri.parse(
-        isLogin
-            ? "http://localhost/budgetflow_api/login.php"
-            : "http://localhost/budgetflow_api/register.php",
-      );
-      final res = await http.post(
-        url,
-        body: {
-          'email': email,
-          'password': password,
-          'first_name': firstName,
-          'last_name': lastName,
-        },
-      );
-      final data = jsonDecode(res.body);
+      final data = isLogin
+          ? await login(email, password)
+          : await register(email, password, firstName, lastName);
+
       if (data['status'] == 'success') {
-        final username = isLogin
-            ? "${data['user']['first_name']} ${data['user']['last_name']}"
-            : "$firstName $lastName";
-        if (!mounted) return;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (_) => HomePage(username: username)),
-        );
+        if (isLogin) {
+          // ✅ Save token + user info to persistent storage
+          await saveSession(data['data']);
+          final username =
+              "${data['data']['first_name']} ${data['data']['last_name']}";
+          if (!mounted) return;
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => HomePage(username: username)),
+          );
+        } else {
+          // After register, switch to login tab
+          _snack("Account created! Please sign in.");
+          setState(() => isLogin = true);
+        }
       } else {
         _snack(data['message'] ?? 'Something went wrong');
       }
-    } catch (_) {
-      _snack("Network error. Please try again.");
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -624,4 +614,45 @@ class SettingsPage extends StatelessWidget {
     appBar: AppBar(title: const Text("Settings"), centerTitle: true),
     body: const Center(child: Text("Settings Page")),
   );
+}
+
+// ─── Splash Gate (Session Checker) ────────────────────────────────────────────
+
+class SplashGate extends StatefulWidget {
+  const SplashGate();
+
+  @override
+  State<SplashGate> createState() => _SplashGateState();
+}
+
+class _SplashGateState extends State<SplashGate> {
+  @override
+  void initState() {
+    super.initState();
+    _check();
+  }
+
+  Future<void> _check() async {
+    final token = await getSavedToken();
+    final username = await getSavedUsername();
+
+    if (!mounted) return;
+
+    if (token != null && username.isNotEmpty) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => HomePage(username: username)),
+      );
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const AuthPage()),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: Center(child: CircularProgressIndicator()));
+  }
 }
