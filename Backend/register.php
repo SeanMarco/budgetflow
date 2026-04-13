@@ -1,41 +1,47 @@
 <?php
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: *");
-header("Access-Control-Allow-Methods: POST, GET, OPTIONS");
-error_reporting(E_ALL);
-ini_set('display_errors', 0);
+header("Access-Control-Allow-Methods: POST, OPTIONS");
 header('Content-Type: application/json');
+error_reporting(E_ERROR | E_PARSE);
 
-$conn = new mysqli('localhost', 'root', '', 'budgetflow');
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') { http_response_code(204); exit; }
 
-if ($conn->connect_error) {
-    echo json_encode(['status' => 'error', 'message' => 'Database connection failed']);
-    exit;
-}
+require_once 'db.php';
+require_once 'response.php';
 
-// Get inputs
-$email = $_POST['email'] ?? '';
-$password = $_POST['password'] ?? '';
-$first_name = $_POST['first_name'] ?? '';
-$last_name = $_POST['last_name'] ?? '';
+$email      = strtolower(trim($_POST['email']      ?? ''));
+$password   = trim($_POST['password']   ?? '');
+$first_name = trim($_POST['first_name'] ?? '');
+$last_name  = trim($_POST['last_name']  ?? '');
 
-// Validate
 if (empty($email) || empty($password) || empty($first_name) || empty($last_name)) {
-    echo json_encode(['status' => 'error', 'message' => 'All fields are required']);
-    exit;
+    send_error("All fields are required");
 }
 
-// Hash password
-$hashPassword = password_hash($password, PASSWORD_DEFAULT);
+if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+    send_error("Invalid email format");
+}
 
-// Insert
-$stmt = $conn->prepare("INSERT INTO users (email, password, first_name, last_name) VALUES (?, ?, ?, ?)");
-$stmt->bind_param("ssss", $email, $hashPassword, $first_name, $last_name);
+if (strlen($password) < 6) {
+    send_error("Password must be at least 6 characters");
+}
+
+$hashed = password_hash($password, PASSWORD_DEFAULT);
+
+$stmt = $conn->prepare(
+    "INSERT INTO users (email, password, first_name, last_name) VALUES (?, ?, ?, ?)"
+);
+$stmt->bind_param("ssss", $email, $hashed, $first_name, $last_name);
 
 if ($stmt->execute()) {
-    echo json_encode(['status' => 'success', 'message' => 'Account created successfully']);
+    send_success([], "Account created successfully");
 } else {
-    echo json_encode(['status' => 'error', 'message' => 'Failed to create account']);
+    // ✅ Detect duplicate email (MySQL error 1062 = duplicate entry)
+    if ($conn->errno === 1062) {
+        send_error("An account with this email already exists");
+    }
+    send_error("Failed to create account. Please try again.");
 }
 
 $stmt->close();
