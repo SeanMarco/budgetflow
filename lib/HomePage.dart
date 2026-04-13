@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pie_chart/pie_chart.dart';
-import 'main.dart' show BF;
+import 'main.dart' show BF, SplashGate;
 import 'AppState.dart';
 import 'BudgetPage.dart';
 import 'ReportsPage.dart';
 import 'RecurringPage.dart';
 import 'AccountsPage.dart';
 import 'SavingsPage.dart';
+import 'api_service.dart';
 
 class HomePage extends StatefulWidget {
   final String username;
@@ -915,7 +916,17 @@ class _HomePageState extends State<HomePage> {
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
-              onPressed: () => Navigator.pushReplacementNamed(context, '/auth'),
+              onPressed: () async {
+                await clearSession();
+
+                if (!mounted) return;
+
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SplashGate()),
+                  (route) => false,
+                );
+              },
               icon: const Icon(Icons.logout_rounded, size: 18),
               label: const Text(
                 "Logout",
