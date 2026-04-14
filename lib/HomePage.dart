@@ -1,18 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pie_chart/pie_chart.dart';
-import 'main.dart' show BF, SplashGate;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'main.dart' show BF, AuthPage;
 import 'AppState.dart';
 import 'BudgetPage.dart';
 import 'ReportsPage.dart';
 import 'RecurringPage.dart';
 import 'AccountsPage.dart';
 import 'SavingsPage.dart';
-import 'api_service.dart';
 
 class HomePage extends StatefulWidget {
   final String username;
-  final int userId; // ← ADD THIS: pass from login screen
+  final int userId;
   const HomePage({super.key, required this.username, required this.userId});
 
   @override
@@ -34,8 +34,6 @@ class _HomePageState extends State<HomePage> {
   double get _balance =>
       _s.accounts.fold(0.0, (s, a) => s + (a['balance'] as double));
 
-  // ── Load all data from API on startup ─────────────────────────────────────
-
   @override
   void initState() {
     super.initState();
@@ -44,31 +42,68 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadData() async {
     setState(() => _loading = true);
-    final uid = widget.userId;
-    final s = AppStateScope.of(context); // before awaits
+    final s = AppStateScope.of(context);
 
-    final accounts = await fetchAccounts(uid);
-    final transactions = await fetchTransactions(uid);
-
-    if (!mounted) return; // ← guard after awaits
-
-    if (accounts.isNotEmpty) {
-      s.accounts
-        ..clear()
-        ..addAll(accounts);
+    // Only load mock data if there's no existing data
+    if (s.transactions.isEmpty && s.accounts.length <= 1) {
+      await Future.delayed(const Duration(seconds: 1)); // Simulate loading
+      s.accounts.addAll([
+        {
+          'id': 'acc1',
+          'name': 'Cash Wallet',
+          'type': 'Cash',
+          'emoji': '👛',
+          'balance': 1500.0,
+          'color': const Color(0xFF0EA974),
+        },
+        {
+          'id': 'acc2',
+          'name': 'Bank Account',
+          'type': 'Bank',
+          'emoji': '🏦',
+          'balance': 5000.0,
+          'color': const Color(0xFF3B82F6),
+        },
+      ]);
+      s.transactions.addAll([
+        {
+          'id': 'tx1',
+          'title': 'Grocery Shopping',
+          'amount': 250.0,
+          'isIncome': false,
+          'category': 'Food',
+          'accountId': 'acc1',
+          'accountName': 'Cash Wallet',
+          'accountEmoji': '👛',
+          'note': '',
+          'date': DateTime.now().subtract(const Duration(days: 1)),
+        },
+        {
+          'id': 'tx2',
+          'title': 'Salary',
+          'amount': 3000.0,
+          'isIncome': true,
+          'category': 'Income',
+          'accountId': 'acc2',
+          'accountName': 'Bank Account',
+          'accountEmoji': '🏦',
+          'note': '',
+          'date': DateTime.now().subtract(const Duration(days: 3)),
+        },
+      ]);
     }
 
-    s.transactions
-      ..clear()
-      ..addAll(transactions);
-
-    setState(
-      () => _loading = false,
-    ); // ← this alone triggers rebuild + notifies
-    s.refresh(); // ← optional now, but fine to keep after
+    setState(() => _loading = false);
   }
 
-  // ── Filtered transactions ─────────────────────────────────────────────────
+  Future<void> _clearSessionData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('user_email');
+    await prefs.remove('user_id');
+    await prefs.remove('first_name');
+    await prefs.remove('last_name');
+  }
 
   List<Map<String, dynamic>> get _filteredTxs {
     return _s.transactions.where((tx) {
@@ -96,8 +131,6 @@ class _HomePageState extends State<HomePage> {
     'All',
     ..._s.transactions.map((t) => t['category'] as String).toSet(),
   ];
-
-  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -234,7 +267,6 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header row
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -281,14 +313,12 @@ class _HomePageState extends State<HomePage> {
             _featureGrid(isDark),
             const SizedBox(height: 18),
             _budgetAlerts(isDark),
-
             if (income > 0 || expense > 0) ...[
               _sectionHead("Overview", isDark),
               const SizedBox(height: 12),
               _pieCard(income, expense, isDark),
               const SizedBox(height: 18),
             ],
-
             if (catTotals.isNotEmpty) ...[
               _sectionHead("Spending Breakdown", isDark),
               const SizedBox(height: 12),
@@ -306,7 +336,6 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 18),
             ],
-
             if (_s.savingsGoals.isNotEmpty) ...[
               _sectionHead(
                 "Savings Goals",
@@ -317,7 +346,6 @@ class _HomePageState extends State<HomePage> {
               ..._s.savingsGoals.take(2).map((g) => _goalMini(g, isDark)),
               const SizedBox(height: 18),
             ],
-
             _sectionHead(
               "Recent Transactions",
               isDark,
@@ -345,11 +373,13 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // ADD / EDIT TRANSACTION SHEET
+  // ADD / EDIT TRANSACTION SHEET — FRONTEND ONLY
   // ══════════════════════════════════════════════════════════════════════════
 
   void _showTxSheet(BuildContext context, {Map<String, dynamic>? existing}) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final appState = _s;
+
     final amountCtrl = TextEditingController(
       text: existing != null
           ? (existing['amount'] as double).toStringAsFixed(0)
@@ -359,12 +389,14 @@ class _HomePageState extends State<HomePage> {
     final categoryCtrl = TextEditingController(
       text: existing?['category'] ?? '',
     );
+
     bool isIncome = existing?['isIncome'] ?? true;
     String accountId =
         existing?['accountId'] ??
-        (_s.accounts.isNotEmpty
-            ? _s.accounts[0]['id'] as String
+        (appState.accounts.isNotEmpty
+            ? appState.accounts[0]['id'] as String
             : 'cash_default');
+    bool isSaving = false;
 
     showModalBottomSheet(
       context: context,
@@ -408,7 +440,6 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                // Type toggle
                 Container(
                   height: 50,
                   decoration: BoxDecoration(
@@ -449,7 +480,7 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 12),
                 _sheetField(categoryCtrl, "Category", isDark),
                 const SizedBox(height: 12),
-                if (_s.accounts.isNotEmpty)
+                if (appState.accounts.isNotEmpty)
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -472,28 +503,24 @@ class _HomePageState extends State<HomePage> {
                           fontSize: 14,
                           color: isDark ? Colors.white : Colors.black87,
                         ),
-                        items: _s.accounts
-                            .map(
-                              (a) => DropdownMenuItem<String>(
-                                value: a['id'] as String,
-                                child: Row(
-                                  children: [
-                                    Text(
-                                      a['emoji'] ?? '💰',
-                                      style: const TextStyle(fontSize: 16),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Text(
-                                      a['name'],
-                                      style: const TextStyle(
-                                        fontFamily: 'Poppins',
-                                      ),
-                                    ),
-                                  ],
+                        items: appState.accounts.map((a) {
+                          return DropdownMenuItem<String>(
+                            value: a['id'] as String,
+                            child: Row(
+                              children: [
+                                Text(
+                                  a['emoji'] ?? '💰',
+                                  style: const TextStyle(fontSize: 16),
                                 ),
-                              ),
-                            )
-                            .toList(),
+                                const SizedBox(width: 8),
+                                Text(
+                                  a['name'],
+                                  style: const TextStyle(fontFamily: 'Poppins'),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
                         onChanged: (v) => setS(() => accountId = v!),
                       ),
                     ),
@@ -516,78 +543,131 @@ class _HomePageState extends State<HomePage> {
                         fontSize: 15,
                       ),
                     ),
-                    onPressed: () async {
-                      final amount = double.tryParse(amountCtrl.text) ?? 0;
-                      if (amount <= 0) return;
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            final amount =
+                                double.tryParse(amountCtrl.text.trim()) ?? 0;
+                            if (amount <= 0) {
+                              ScaffoldMessenger.of(ctx).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Please enter a valid amount'),
+                                ),
+                              );
+                              return;
+                            }
 
-                      final title = noteCtrl.text.isEmpty
-                          ? (isIncome ? "Income" : "Expense")
-                          : noteCtrl.text;
-                      final category = categoryCtrl.text.isEmpty
-                          ? 'General'
-                          : categoryCtrl.text;
-                      final dateStr = DateFormat(
-                        'yyyy-MM-dd HH:mm:ss',
-                      ).format(existing?['date'] ?? DateTime.now());
+                            setS(() => isSaving = true);
 
-                      if (existing != null) {
-                        // ── EDIT ──────────────────────────────────────
-                        final res = await editTransactionAPI(
-                          id: int.tryParse(existing['id'].toString()) ?? 0,
-                          userId: widget.userId,
-                          title: title,
-                          amount: amount,
-                          isIncome: isIncome,
-                          category: category,
-                          accountId: accountId,
-                          note: noteCtrl.text,
-                        );
-                        if (res['status'] == 'success') {
-                          final updated = {
-                            ...existing,
-                            'title': title,
-                            'amount': amount,
-                            'isIncome': isIncome,
-                            'category': category,
-                            'accountId': accountId,
-                            'note': noteCtrl.text,
-                          };
-                          _s.editTransaction(
-                            existing['id'].toString(),
-                            updated,
-                          );
-                        }
-                      } else {
-                        // ── ADD ───────────────────────────────────────
-                        final res = await addTransactionAPI(
-                          userId: widget.userId,
-                          title: title,
-                          amount: amount,
-                          isIncome: isIncome,
-                          category: category,
-                          accountId: accountId,
-                          note: noteCtrl.text,
-                          date: dateStr,
-                        );
-                        if (res['status'] == 'success') {
-                          final newId = res['id'].toString();
-                          _s.addTransaction({
-                            'id': newId,
-                            'title': title,
-                            'amount': amount,
-                            'isIncome': isIncome,
-                            'category': category,
-                            'accountId': accountId,
-                            'note': noteCtrl.text,
-                            'date': DateTime.now(),
-                          });
-                        }
-                      }
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    },
-                    child: Text(
-                      existing != null ? "Save Changes" : "Add Transaction",
-                    ),
+                            final title = noteCtrl.text.trim().isEmpty
+                                ? (isIncome ? "Income" : "Expense")
+                                : noteCtrl.text.trim();
+                            final category = categoryCtrl.text.trim().isEmpty
+                                ? 'General'
+                                : categoryCtrl.text.trim();
+
+                            // Generate a new ID
+                            final newId = DateTime.now().millisecondsSinceEpoch
+                                .toString();
+
+                            // Update account balance
+                            final accountIndex = appState.accounts.indexWhere(
+                              (a) => a['id'] == accountId,
+                            );
+                            if (accountIndex != -1) {
+                              final currentBalance =
+                                  appState.accounts[accountIndex]['balance']
+                                      as double;
+                              final balanceChange = isIncome ? amount : -amount;
+                              appState.accounts[accountIndex]['balance'] =
+                                  currentBalance + balanceChange;
+                            }
+
+                            if (existing != null) {
+                              // EDIT MODE
+                              final oldAmount = existing['amount'] as double;
+                              final oldIsIncome = existing['isIncome'] as bool;
+                              final oldAccountId =
+                                  existing['accountId'] as String;
+
+                              // Reverse old transaction effect
+                              final oldAccountIndex = appState.accounts
+                                  .indexWhere((a) => a['id'] == oldAccountId);
+                              if (oldAccountIndex != -1) {
+                                final oldBalance =
+                                    appState.accounts[oldAccountIndex]['balance']
+                                        as double;
+                                final oldBalanceChange = oldIsIncome
+                                    ? -oldAmount
+                                    : oldAmount;
+                                appState.accounts[oldAccountIndex]['balance'] =
+                                    oldBalance + oldBalanceChange;
+                              }
+
+                              // Apply new transaction effect (already applied above for the new account)
+                              // If account changed, we need to adjust differently
+                              if (oldAccountId != accountId) {
+                                // Remove the effect we added earlier and apply correctly
+                                final newAccountIndex = appState.accounts
+                                    .indexWhere((a) => a['id'] == accountId);
+                                if (newAccountIndex != -1) {
+                                  final newBalance =
+                                      appState.accounts[newAccountIndex]['balance']
+                                          as double;
+                                  final newBalanceChange = isIncome
+                                      ? amount
+                                      : -amount;
+                                  appState.accounts[newAccountIndex]['balance'] =
+                                      newBalance + newBalanceChange;
+                                }
+                              }
+
+                              // Update the transaction
+                              appState
+                                  .editTransaction(existing['id'].toString(), {
+                                    ...existing,
+                                    'title': title,
+                                    'amount': amount,
+                                    'isIncome': isIncome,
+                                    'category': category,
+                                    'accountId': accountId,
+                                    'note': noteCtrl.text.trim(),
+                                    'date': existing['date'],
+                                  });
+                            } else {
+                              // ADD MODE
+                              appState.addTransaction({
+                                'id': newId,
+                                'title': title,
+                                'amount': amount,
+                                'isIncome': isIncome,
+                                'category': category,
+                                'accountId': accountId,
+                                'note': noteCtrl.text.trim(),
+                                'date': DateTime.now(),
+                              });
+                            }
+
+                            setS(() => isSaving = false);
+                            if (ctx.mounted) Navigator.pop(ctx);
+
+                            // Refresh the UI
+                            setState(() {});
+                          },
+                    child: isSaving
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            existing != null
+                                ? "Save Changes"
+                                : "Add Transaction",
+                          ),
                   ),
                 ),
               ],
@@ -612,7 +692,6 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
           child: Column(
             children: [
-              // Search bar
               Container(
                 height: 48,
                 decoration: BF
@@ -664,7 +743,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(height: 12),
-              // Filter chips
               SizedBox(
                 height: 34,
                 child: ListView(
@@ -897,11 +975,14 @@ class _HomePageState extends State<HomePage> {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () async {
-                await clearSession();
+                // Only clear session data, NOT the app data
+                // This preserves all transactions, accounts, budgets, and savings goals
+                await _clearSessionData();
+
                 if (!mounted) return;
                 Navigator.pushAndRemoveUntil(
                   context,
-                  MaterialPageRoute(builder: (_) => const SplashGate()),
+                  MaterialPageRoute(builder: (_) => const AuthPage()),
                   (route) => false,
                 );
               },
@@ -931,7 +1012,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SHARED WIDGETS (unchanged from original)
+  // SHARED WIDGETS
   // ══════════════════════════════════════════════════════════════════════════
 
   Widget _balanceCard(bool isDark) {
@@ -1259,13 +1340,18 @@ class _HomePageState extends State<HomePage> {
       key: Key(id),
       direction: DismissDirection.endToStart,
       onDismissed: (_) async {
-        // Remove locally immediately
-        _s.deleteTransaction(id);
-        // Then sync to DB
-        await deleteTransactionAPI(
-          id: int.tryParse(id) ?? 0,
-          userId: widget.userId,
+        // Reverse the balance effect when deleting
+        final accountIndex = _s.accounts.indexWhere(
+          (a) => a['id'] == tx['accountId'],
         );
+        if (accountIndex != -1) {
+          final currentBalance = _s.accounts[accountIndex]['balance'] as double;
+          final balanceChange = isIncome ? -tx['amount'] : tx['amount'];
+          _s.accounts[accountIndex]['balance'] = currentBalance + balanceChange;
+        }
+
+        _s.deleteTransaction(id);
+        setState(() {});
       },
       background: Container(
         margin: const EdgeInsets.only(bottom: 10),

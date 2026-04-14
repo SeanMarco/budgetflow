@@ -2,11 +2,15 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
-/// IMPORTANT – change baseUrl for your device:
+/// IMPORTANT – change baseUrl to match your setup:
 ///   Android Emulator → http://10.0.2.2/budgetflow_api
-///   Real Phone       → http://YOUR_PC_IP/budgetflow_api
+///   Real Phone       → http://YOUR_PC_LAN_IP/budgetflow_api  e.g. http://192.168.1.5/budgetflow_api
 ///   iOS Simulator    → http://localhost/budgetflow_api
-const String baseUrl = "http://localhost/budgetflow_api";
+///
+/// To find your PC's LAN IP:
+///   Windows → run "ipconfig" in CMD, look for IPv4 Address
+///   Mac/Linux → run "ifconfig" in Terminal, look for inet under en0
+const String baseUrl = "http://localhost/budgetflow_api"; // ← CHANGE THIS
 
 // ─────────────────────────────────────────────
 // LOGIN
@@ -21,6 +25,7 @@ Future<Map<String, dynamic>> login(String email, String password) async {
         .timeout(const Duration(seconds: 10));
     return json.decode(res.body);
   } catch (e) {
+    print('[API] login error: $e');
     return {
       "status": "error",
       "message": "Login failed: check server or network",
@@ -51,6 +56,7 @@ Future<Map<String, dynamic>> register(
         .timeout(const Duration(seconds: 10));
     return json.decode(res.body);
   } catch (e) {
+    print('[API] register error: $e');
     return {
       "status": "error",
       "message": "Registration failed: check server or network",
@@ -107,8 +113,10 @@ Future<List<Map<String, dynamic>>> fetchAccounts(int userId) async {
     if (body['status'] == 'success') {
       return List<Map<String, dynamic>>.from(body['data']);
     }
+    print('[API] fetchAccounts failed: ${body['message']}');
     return [];
   } catch (e) {
+    print('[API] fetchAccounts error: $e');
     return [];
   }
 }
@@ -138,8 +146,10 @@ Future<List<Map<String, dynamic>>> fetchTransactions(int userId) async {
         };
       }).toList();
     }
+    print('[API] fetchTransactions failed: ${body['message']}');
     return [];
   } catch (e) {
+    print('[API] fetchTransactions error: $e');
     return [];
   }
 }
@@ -170,9 +180,11 @@ Future<Map<String, dynamic>> addTransactionAPI({
           },
         )
         .timeout(const Duration(seconds: 10));
+    print('[API] addTransaction response: ${res.body}');
     return json.decode(res.body);
   } catch (e) {
-    return {"status": "error", "message": "Add transaction failed"};
+    print('[API] addTransaction error: $e');
+    return {"status": "error", "message": "Add transaction failed: $e"};
   }
 }
 
@@ -202,9 +214,11 @@ Future<Map<String, dynamic>> editTransactionAPI({
           },
         )
         .timeout(const Duration(seconds: 10));
+    print('[API] editTransaction response: ${res.body}');
     return json.decode(res.body);
   } catch (e) {
-    return {"status": "error", "message": "Edit transaction failed"};
+    print('[API] editTransaction error: $e');
+    return {"status": "error", "message": "Edit transaction failed: $e"};
   }
 }
 
@@ -219,8 +233,10 @@ Future<Map<String, dynamic>> deleteTransactionAPI({
           body: {'id': id.toString(), 'user_id': userId.toString()},
         )
         .timeout(const Duration(seconds: 10));
+    print('[API] deleteTransaction response: ${res.body}');
     return json.decode(res.body);
   } catch (e) {
-    return {"status": "error", "message": "Delete transaction failed"};
+    print('[API] deleteTransaction error: $e');
+    return {"status": "error", "message": "Delete transaction failed: $e"};
   }
 }
