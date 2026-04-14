@@ -23,12 +23,12 @@ class AppState extends ChangeNotifier {
   double get totalBalance =>
       accounts.fold(0.0, (sum, a) => sum + (a['balance'] as double));
 
-  // ── Transactions ─────────────────────────────────────────────────────────
+  // ── Transactions ──────────────────────────────────────────────────────────
 
   void addTransaction(Map<String, dynamic> tx) {
     transactions.insert(0, tx);
     _applyToAccount(
-      tx['accountId'],
+      tx['accountId'] as String?,
       tx['isIncome'] as bool,
       tx['amount'] as double,
     );
@@ -36,28 +36,31 @@ class AppState extends ChangeNotifier {
   }
 
   void deleteTransaction(String id) {
-    final tx = transactions.firstWhere((t) => t['id'] == id, orElse: () => {});
+    final tx = transactions.firstWhere(
+      (t) => t['id'].toString() == id,
+      orElse: () => {},
+    );
     if (tx.isEmpty) return;
     _applyToAccount(
-      tx['accountId'],
+      tx['accountId'] as String?,
       !(tx['isIncome'] as bool),
       tx['amount'] as double,
     );
-    transactions.removeWhere((t) => t['id'] == id);
+    transactions.removeWhere((t) => t['id'].toString() == id);
     notifyListeners();
   }
 
   void editTransaction(String id, Map<String, dynamic> updated) {
-    final idx = transactions.indexWhere((t) => t['id'] == id);
+    final idx = transactions.indexWhere((t) => t['id'].toString() == id);
     if (idx < 0) return;
     final old = transactions[idx];
     _applyToAccount(
-      old['accountId'],
+      old['accountId'] as String?,
       !(old['isIncome'] as bool),
       old['amount'] as double,
     );
     _applyToAccount(
-      updated['accountId'],
+      updated['accountId'] as String?,
       updated['isIncome'] as bool,
       updated['amount'] as double,
     );
@@ -67,7 +70,7 @@ class AppState extends ChangeNotifier {
 
   void _applyToAccount(String? accountId, bool isCredit, double amount) {
     if (accountId == null) return;
-    final idx = accounts.indexWhere((a) => a['id'] == accountId);
+    final idx = accounts.indexWhere((a) => a['id'].toString() == accountId);
     if (idx < 0) return;
     final acc = accounts[idx];
     accounts[idx] = {
@@ -76,7 +79,7 @@ class AppState extends ChangeNotifier {
     };
   }
 
-  // ── Transfers ────────────────────────────────────────────────────────────
+  // ── Transfers ─────────────────────────────────────────────────────────────
 
   void transfer(String fromId, String toId, double amount) {
     _applyToAccount(fromId, false, amount);
@@ -133,7 +136,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Accounts ─────────────────────────────────────────────────────────────
+  // ── Accounts ──────────────────────────────────────────────────────────────
 
   void addAccount(Map<String, dynamic> account) {
     accounts.add(account);
@@ -145,7 +148,7 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // ── Recurring ────────────────────────────────────────────────────────────
+  // ── Recurring ─────────────────────────────────────────────────────────────
 
   void addRecurring(Map<String, dynamic> r) {
     recurringTransactions.add(r);
@@ -185,6 +188,10 @@ class AppState extends ChangeNotifier {
   double spentInCategory(String category) => transactions
       .where((t) => !(t['isIncome'] as bool) && t['category'] == category)
       .fold(0.0, (s, t) => s + (t['amount'] as double));
+
+  // ── Refresh ───────────────────────────────────────────────────────────────
+
+  void refresh() => notifyListeners();
 }
 
 // ─── AppStateScope ────────────────────────────────────────────────────────────

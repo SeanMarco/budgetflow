@@ -578,9 +578,12 @@ class _AuthPageState extends State<AuthPage>
           final username =
               "${data['data']['first_name']} ${data['data']['last_name']}";
           if (!mounted) return;
+          final userId = data['data']['id'] as int? ?? 0;
           Navigator.pushReplacement(
             context,
-            MaterialPageRoute(builder: (_) => HomePage(username: username)),
+            MaterialPageRoute(
+              builder: (_) => HomePage(username: username, userId: userId),
+            ),
           );
         } else {
           // After register, switch to login tab
@@ -635,13 +638,14 @@ class _SplashGateState extends State<SplashGate> {
   Future<void> _check() async {
     final token = await getSavedToken();
     final username = await getSavedUsername();
-
+    final userId = await getSavedUserId(); // ← add this
     if (!mounted) return;
-
     if (token != null && username.isNotEmpty) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => HomePage(username: username)),
+        MaterialPageRoute(
+          builder: (_) => HomePage(username: username, userId: userId),
+        ),
       );
     } else {
       Navigator.pushReplacement(

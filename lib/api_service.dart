@@ -2,18 +2,15 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 
-/// IMPORTANT:
-/// Use correct base URL depending on device
-///
-/// Android Emulator → http://10.0.2.2/budgetflow_api
-/// Real Phone       → http://YOUR_PC_IP/budgetflow_api
-/// iOS Simulator    → http://localhost/budgetflow_api
-
+/// IMPORTANT – change baseUrl for your device:
+///   Android Emulator → http://10.0.2.2/budgetflow_api
+///   Real Phone       → http://YOUR_PC_IP/budgetflow_api
+///   iOS Simulator    → http://localhost/budgetflow_api
 const String baseUrl = "http://localhost/budgetflow_api";
 
-/// ─────────────────────────────────────────────
-/// LOGIN
-/// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// LOGIN
+// ─────────────────────────────────────────────
 Future<Map<String, dynamic>> login(String email, String password) async {
   try {
     final res = await http
@@ -22,7 +19,6 @@ Future<Map<String, dynamic>> login(String email, String password) async {
           body: {'email': email, 'password': password},
         )
         .timeout(const Duration(seconds: 10));
-
     return json.decode(res.body);
   } catch (e) {
     return {
@@ -32,9 +28,9 @@ Future<Map<String, dynamic>> login(String email, String password) async {
   }
 }
 
-/// ─────────────────────────────────────────────
-/// REGISTER
-/// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// REGISTER
+// ─────────────────────────────────────────────
 Future<Map<String, dynamic>> register(
   String email,
   String password,
@@ -53,7 +49,6 @@ Future<Map<String, dynamic>> register(
           },
         )
         .timeout(const Duration(seconds: 10));
-
     return json.decode(res.body);
   } catch (e) {
     return {
@@ -63,30 +58,23 @@ Future<Map<String, dynamic>> register(
   }
 }
 
-/// ─────────────────────────────────────────────
-/// SAVE SESSION
-/// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// SESSION
+// ─────────────────────────────────────────────
 Future<void> saveSession(Map<String, dynamic> userData) async {
   final prefs = await SharedPreferences.getInstance();
-
   await prefs.setString('token', userData['token'] ?? '');
   await prefs.setString('first_name', userData['first_name'] ?? '');
   await prefs.setString('last_name', userData['last_name'] ?? '');
   await prefs.setInt('user_id', userData['id'] ?? 0);
 }
 
-/// ─────────────────────────────────────────────
-/// GET TOKEN
-/// ─────────────────────────────────────────────
 Future<String?> getSavedToken() async {
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('token');
   return (token != null && token.isNotEmpty) ? token : null;
 }
 
-/// ─────────────────────────────────────────────
-/// GET USERNAME
-/// ─────────────────────────────────────────────
 Future<String> getSavedUsername() async {
   final prefs = await SharedPreferences.getInstance();
   final first = prefs.getString('first_name') ?? '';
@@ -94,9 +82,11 @@ Future<String> getSavedUsername() async {
   return '$first $last'.trim();
 }
 
-/// ─────────────────────────────────────────────
-/// CLEAR SESSION (LOGOUT FIX)
-/// ─────────────────────────────────────────────
+Future<int> getSavedUserId() async {
+  final prefs = await SharedPreferences.getInstance();
+  return prefs.getInt('user_id') ?? 0;
+}
+
 Future<void> clearSession() async {
   final prefs = await SharedPreferences.getInstance();
   await prefs.remove('token');
@@ -105,10 +95,55 @@ Future<void> clearSession() async {
   await prefs.remove('user_id');
 }
 
-/// ─────────────────────────────────────────────
-/// 🔥 NEW: SAVE TRANSACTION TO DATABASE
-/// (THIS FIXES YOUR "NOT REFLECTING IN DB")
-/// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// ACCOUNTS
+// ─────────────────────────────────────────────
+Future<List<Map<String, dynamic>>> fetchAccounts(int userId) async {
+  try {
+    final res = await http
+        .get(Uri.parse('$baseUrl/get_accounts.php?user_id=$userId'))
+        .timeout(const Duration(seconds: 10));
+    final body = json.decode(res.body);
+    if (body['status'] == 'success') {
+      return List<Map<String, dynamic>>.from(body['data']);
+    }
+    return [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// ─────────────────────────────────────────────
+// TRANSACTIONS
+// ─────────────────────────────────────────────
+Future<List<Map<String, dynamic>>> fetchTransactions(int userId) async {
+  try {
+    final res = await http
+        .get(Uri.parse('$baseUrl/get_transactions.php?user_id=$userId'))
+        .timeout(const Duration(seconds: 10));
+    final body = json.decode(res.body);
+    if (body['status'] == 'success') {
+      return (body['data'] as List).map((item) {
+        return {
+          'id': item['id'].toString(),
+          'title': item['title'],
+          'amount': (item['amount'] as num).toDouble(),
+          'isIncome': item['isIncome'] == true || item['isIncome'] == 1,
+          'category': item['category'],
+          'accountId': item['accountId'].toString(),
+          'accountName': item['accountName'] ?? '',
+          'accountEmoji': item['accountEmoji'] ?? '',
+          'note': item['note'] ?? '',
+          'date': DateTime.tryParse(item['date'] ?? '') ?? DateTime.now(),
+        };
+      }).toList();
+    }
+    return [];
+  } catch (e) {
+    return [];
+  }
+}
+
 Future<Map<String, dynamic>> addTransactionAPI({
   required int userId,
   required String title,
@@ -116,6 +151,7 @@ Future<Map<String, dynamic>> addTransactionAPI({
   required bool isIncome,
   required String category,
   required String accountId,
+  required String note,
   required String date,
 }) async {
   try {
@@ -129,16 +165,62 @@ Future<Map<String, dynamic>> addTransactionAPI({
             'is_income': isIncome ? "1" : "0",
             'category': category,
             'account_id': accountId,
+            'note': note,
             'date': date,
           },
         )
         .timeout(const Duration(seconds: 10));
-
     return json.decode(res.body);
   } catch (e) {
-    return {
-      "status": "error",
-      "message": "Transaction failed: check API connection",
-    };
+    return {"status": "error", "message": "Add transaction failed"};
+  }
+}
+
+Future<Map<String, dynamic>> editTransactionAPI({
+  required int id,
+  required int userId,
+  required String title,
+  required double amount,
+  required bool isIncome,
+  required String category,
+  required String accountId,
+  required String note,
+}) async {
+  try {
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/edit_transaction.php'),
+          body: {
+            'id': id.toString(),
+            'user_id': userId.toString(),
+            'title': title,
+            'amount': amount.toString(),
+            'is_income': isIncome ? "1" : "0",
+            'category': category,
+            'account_id': accountId,
+            'note': note,
+          },
+        )
+        .timeout(const Duration(seconds: 10));
+    return json.decode(res.body);
+  } catch (e) {
+    return {"status": "error", "message": "Edit transaction failed"};
+  }
+}
+
+Future<Map<String, dynamic>> deleteTransactionAPI({
+  required int id,
+  required int userId,
+}) async {
+  try {
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/delete_transaction.php'),
+          body: {'id': id.toString(), 'user_id': userId.toString()},
+        )
+        .timeout(const Duration(seconds: 10));
+    return json.decode(res.body);
+  } catch (e) {
+    return {"status": "error", "message": "Delete transaction failed"};
   }
 }
