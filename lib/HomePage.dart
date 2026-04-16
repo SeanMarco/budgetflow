@@ -13,6 +13,47 @@ import 'AccountsPage.dart';
 import 'SavingsPage.dart';
 import 'api_service.dart';
 
+// ── Category constants ────────────────────────────────────────────────────────
+class TxCategories {
+  static const List<Map<String, dynamic>> list = [
+    {'label': 'Food', 'emoji': '🍜', 'color': Color(0xFFFF6B6B)},
+    {'label': 'Transportation', 'emoji': '🚗', 'color': Color(0xFF4ECDC4)},
+    {'label': 'Bills & Utilities', 'emoji': '💡', 'color': Color(0xFFFFE66D)},
+    {'label': 'Rent / Housing', 'emoji': '🏠', 'color': Color(0xFF6C63FF)},
+    {'label': 'Entertainment', 'emoji': '🎬', 'color': Color(0xFFFF9FF3)},
+    {'label': 'Shopping', 'emoji': '🛍️', 'color': Color(0xFFFFA502)},
+    {'label': 'Health / Medical', 'emoji': '💊', 'color': Color(0xFF2ED573)},
+    {'label': 'Education', 'emoji': '📚', 'color': Color(0xFF1E90FF)},
+    {'label': 'Savings', 'emoji': '🏦', 'color': Color(0xFF0EA974)},
+    {'label': 'Investments', 'emoji': '📈', 'color': Color(0xFF00D2D3)},
+    {'label': 'Debt / Loans', 'emoji': '💳', 'color': Color(0xFFFF4757)},
+    {'label': 'Insurance', 'emoji': '🛡️', 'color': Color(0xFF747D8C)},
+    {'label': 'Subscriptions', 'emoji': '🔄', 'color': Color(0xFFA29BFE)},
+    {'label': 'Travel', 'emoji': '✈️', 'color': Color(0xFF00CEC9)},
+    {'label': 'Personal Care', 'emoji': '🧴', 'color': Color(0xFFFD79A8)},
+    {'label': 'Gifts / Donations', 'emoji': '🎁', 'color': Color(0xFFE17055)},
+    {'label': 'Family / Kids', 'emoji': '👨‍👩‍👧', 'color': Color(0xFFFFB8B8)},
+    {'label': 'Emergency', 'emoji': '🚨', 'color': Color(0xFFD63031)},
+    {'label': 'Others', 'emoji': '✏️', 'color': Color(0xFF636E72)},
+  ];
+
+  static Map<String, dynamic>? findByLabel(String label) {
+    try {
+      return list.firstWhere((c) => c['label'] == label);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Color colorFor(String label) {
+    return findByLabel(label)?['color'] as Color? ?? BF.accent;
+  }
+
+  static String emojiFor(String label) {
+    return findByLabel(label)?['emoji'] as String? ?? '📌';
+  }
+}
+
 class HomePage extends StatefulWidget {
   final String username;
   final int userId;
@@ -26,7 +67,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   int _tab = 0;
   bool _loading = true;
   String? _profileImagePath;
-  bool _isDarkMode = true; // default dark
+  bool _isDarkMode = true;
   late AnimationController _themeAnimCtrl;
   late AnimationController _fabAnimCtrl;
 
@@ -155,14 +196,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: _isDarkMode ? Colors.white24 : Colors.black12,
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
+            _sheetHandle(),
             const SizedBox(height: 20),
             Text(
               "Change Profile Photo",
@@ -301,7 +335,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     ..._s.transactions.map((t) => t['category'] as String).toSet(),
   ];
 
-  // ── Quick Stats for dashboard ──────────────────────────────────────────
   Map<String, double> get _thisMonthStats {
     final now = DateTime.now();
     double income = 0, expense = 0;
@@ -318,9 +351,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     return {'income': income, 'expense': expense};
   }
 
+  // ── Compute overall income/expense totals ─────────────────────────────────
+  Map<String, double> get _allTimeStats {
+    double income = 0, expense = 0;
+    for (var tx in _s.transactions) {
+      if (tx['isIncome']) {
+        income += tx['amount'] as double;
+      } else {
+        expense += tx['amount'] as double;
+      }
+    }
+    return {'income': income, 'expense': expense};
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Override system brightness with local toggle
     final brightness = _isDarkMode ? Brightness.dark : Brightness.light;
     final isDark = _isDarkMode;
 
@@ -446,7 +491,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // ══════════════════════════════════════════════════════════════════════════
   // DASHBOARD
   // ══════════════════════════════════════════════════════════════════════════
-
   Widget _dashboard() {
     final isDark = _isDarkMode;
     double income = 0, expense = 0;
@@ -460,7 +504,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         catTotals[c] = (catTotals[c] ?? 0) + (tx['amount'] as double);
       }
     }
-
     final monthStats = _thisMonthStats;
 
     return RefreshIndicator(
@@ -502,7 +545,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
                 Row(
                   children: [
-                    // Dark mode toggle button
                     GestureDetector(
                       onTap: () {
                         setState(() => _isDarkMode = !_isDarkMode);
@@ -531,7 +573,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    // Avatar → taps to Profile tab
                     GestureDetector(
                       onTap: () => setState(() => _tab = 2),
                       child: _avatarWidget(widget.username, size: 44),
@@ -541,8 +582,34 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ],
             ),
             const SizedBox(height: 22),
+
+            // ── Balance Card ─────────────────────────────────────────────
             _balanceCard(isDark),
             const SizedBox(height: 14),
+
+            // ── NEW: Wallets/Accounts horizontal scroll ───────────────────
+            if (_s.accounts.isNotEmpty) ...[
+              _sectionHead(
+                "My Wallets",
+                isDark,
+                action: _viewAll(
+                  "Manage",
+                  () => _push(AccountsPage(userId: widget.userId)),
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                height: 100,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: _s.accounts.length,
+                  itemBuilder: (_, i) => _walletCard(_s.accounts[i], isDark),
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+
+            // ── Income / Expense summary row ─────────────────────────────
             Row(
               children: [
                 Expanded(child: _summaryTile("Income", income, true, isDark)),
@@ -553,18 +620,22 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ],
             ),
             const SizedBox(height: 14),
+
             // ── This Month Card ──────────────────────────────────────────
             _thisMonthCard(monthStats, isDark),
             const SizedBox(height: 18),
+
             _featureGrid(isDark),
             const SizedBox(height: 18),
             _budgetAlerts(isDark),
+
             if (income > 0 || expense > 0) ...[
               _sectionHead("Overview", isDark),
               const SizedBox(height: 12),
               _pieCard(income, expense, isDark),
               const SizedBox(height: 18),
             ],
+
             if (catTotals.isNotEmpty) ...[
               _sectionHead("Spending Breakdown", isDark),
               const SizedBox(height: 12),
@@ -582,6 +653,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ),
               const SizedBox(height: 18),
             ],
+
             if (_s.savingsGoals.isNotEmpty) ...[
               _sectionHead(
                 "Savings Goals",
@@ -592,6 +664,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ..._s.savingsGoals.take(2).map((g) => _goalMini(g, isDark)),
               const SizedBox(height: 18),
             ],
+
             _sectionHead(
               "Recent Transactions",
               isDark,
@@ -612,6 +685,102 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         .map((tx) => _txTile(tx, isDark))
                         .toList(),
                   ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── NEW: Wallet Card ──────────────────────────────────────────────────────
+  Widget _walletCard(Map<String, dynamic> acc, bool isDark) {
+    final Color baseColor = acc['color'] is Color
+        ? acc['color'] as Color
+        : (acc['color'] != null
+              ? Color(
+                  int.parse((acc['color'] as String).replaceFirst('#', '0xFF')),
+                )
+              : BF.accent);
+    final balance = acc['balance'] as double;
+    final isNegative = balance < 0;
+
+    return GestureDetector(
+      onTap: () => _push(AccountsPage(userId: widget.userId)),
+      child: Container(
+        width: 160,
+        margin: const EdgeInsets.only(right: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              baseColor.withOpacity(isDark ? 0.25 : 0.15),
+              baseColor.withOpacity(isDark ? 0.10 : 0.06),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: baseColor.withOpacity(0.3), width: 1.2),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: baseColor.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    acc['emoji'] ?? '💰',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    acc['name'],
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : Colors.black54,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  currency.format(balance),
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: isNegative
+                        ? BF.red
+                        : (isDark ? Colors.white : Colors.black87),
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  acc['type'] ?? 'Wallet',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 10,
+                    color: baseColor.withOpacity(0.8),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -712,9 +881,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // ADD / EDIT TRANSACTION SHEET
+  // ADD / EDIT TRANSACTION SHEET  (with category picker)
   // ══════════════════════════════════════════════════════════════════════════
-
   void _showTxSheet(BuildContext context, {Map<String, dynamic>? existing}) {
     final isDark = _isDarkMode;
     final appState = _s;
@@ -731,24 +899,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 
     bool isIncome = existing?['isIncome'] ?? true;
 
-    // ✅ FIXED: Ensure accountId is properly set
     String accountId = '';
-
-    // Initialize accountId properly
     if (existing != null && existing['accountId'] != null) {
       accountId = existing['accountId'].toString();
     } else if (appState.accounts.isNotEmpty) {
       accountId = appState.accounts[0]['id'].toString();
     }
 
-    bool isSaving = false;
+    // ── Pre-select category from existing tx or default ──────────────────
+    String selectedCategory = existing?['category'] ?? '';
+    bool isCustomCategory =
+        selectedCategory.isNotEmpty &&
+        TxCategories.findByLabel(selectedCategory) == null;
 
-    // Debug print
-    debugPrint('[TX SHEET] Initial accountId: $accountId');
-    debugPrint('[TX SHEET] Available accounts: ${appState.accounts.length}');
-    for (var acc in appState.accounts) {
-      debugPrint('[TX SHEET] Account: ${acc['id']} - ${acc['name']}');
-    }
+    bool isSaving = false;
+    String localAccountId = accountId; // ← add this line here
 
     showModalBottomSheet(
       context: context,
@@ -756,9 +921,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setS) {
-          // Local state for dropdown
-          String localAccountId = accountId;
-
           return Container(
             decoration: BoxDecoration(
               color: isDark ? BF.darkCard : Colors.white,
@@ -777,16 +939,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: isDark ? Colors.white24 : Colors.black12,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
+                  Center(child: _sheetHandle()),
                   const SizedBox(height: 20),
                   Text(
                     existing != null ? "Edit Transaction" : "New Transaction",
@@ -798,6 +951,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(height: 20),
+
+                  // Income / Expense toggle
                   Container(
                     height: 50,
                     decoration: BoxDecoration(
@@ -826,6 +981,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     ),
                   ),
                   const SizedBox(height: 14),
+
                   _sheetField(
                     amountCtrl,
                     "Amount",
@@ -836,9 +992,180 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   const SizedBox(height: 12),
                   _sheetField(noteCtrl, "Title / Note", isDark),
                   const SizedBox(height: 12),
-                  _sheetField(categoryCtrl, "Category", isDark),
-                  const SizedBox(height: 12),
-                  // ✅ FIXED: Account dropdown with better handling
+
+                  // ── NEW: Category Picker ─────────────────────────────
+                  Text(
+                    "Category",
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : Colors.black54,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+
+                  // Selected chip display
+                  if (selectedCategory.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: TxCategories.colorFor(
+                          selectedCategory,
+                        ).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: TxCategories.colorFor(
+                            selectedCategory,
+                          ).withOpacity(0.35),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            TxCategories.emojiFor(selectedCategory),
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            selectedCategory,
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: TxCategories.colorFor(selectedCategory),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          GestureDetector(
+                            onTap: () => setS(() {
+                              selectedCategory = '';
+                              isCustomCategory = false;
+                              categoryCtrl.clear();
+                            }),
+                            child: Icon(
+                              Icons.close_rounded,
+                              size: 14,
+                              color: TxCategories.colorFor(selectedCategory),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                  // Grid of category options
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: TxCategories.list.map((cat) {
+                      final label = cat['label'] as String;
+                      final emoji = cat['emoji'] as String;
+                      final color = cat['color'] as Color;
+                      final isSelected = selectedCategory == label;
+
+                      if (label == 'Others') {
+                        return GestureDetector(
+                          onTap: () => setS(() {
+                            selectedCategory = 'Others';
+                            isCustomCategory = true;
+                            categoryCtrl.text = '';
+                          }),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 160),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 7,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? color
+                                  : color.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isSelected
+                                    ? color
+                                    : color.withOpacity(0.25),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  emoji,
+                                  style: const TextStyle(fontSize: 14),
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  "Custom…",
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: isSelected ? Colors.white : color,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+
+                      return GestureDetector(
+                        onTap: () => setS(() {
+                          selectedCategory = label;
+                          isCustomCategory = false;
+                          categoryCtrl.text = label;
+                        }),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 160),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected ? color : color.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isSelected
+                                  ? color
+                                  : color.withOpacity(0.25),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(emoji, style: const TextStyle(fontSize: 14)),
+                              const SizedBox(width: 5),
+                              Text(
+                                label,
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected ? Colors.white : color,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+
+                  // "Others" — custom text field
+                  if (isCustomCategory || selectedCategory == 'Others') ...[
+                    const SizedBox(height: 10),
+                    _sheetField(categoryCtrl, "Type your category…", isDark),
+                  ],
+
+                  const SizedBox(height: 14),
+
+                  // Account dropdown
                   if (appState.accounts.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -902,12 +1229,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             );
                           }).toList(),
                           onChanged: (v) {
-                            if (v != null) {
-                              setS(() {
-                                localAccountId = v;
-                              });
-                              debugPrint('[TX SHEET] Selected account: $v');
-                            }
+                            if (v != null) setS(() => localAccountId = v);
                           },
                         ),
                       ),
@@ -938,6 +1260,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     ),
                   const SizedBox(height: 20),
+
+                  // Save button
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -960,8 +1284,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           : () async {
                               final amount =
                                   double.tryParse(amountCtrl.text.trim()) ?? 0;
-
-                              // Validation
                               if (amount <= 0) {
                                 ScaffoldMessenger.of(ctx).showSnackBar(
                                   const SnackBar(
@@ -974,8 +1296,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 );
                                 return;
                               }
-
-                              // ✅ FIXED: Check if account is selected
                               if (localAccountId.isEmpty) {
                                 ScaffoldMessenger.of(ctx).showSnackBar(
                                   const SnackBar(
@@ -987,71 +1307,35 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                 return;
                               }
 
-                              // Check if account exists in the list
-                              final accountExists = appState.accounts.any(
-                                (a) => a['id'].toString() == localAccountId,
-                              );
-
-                              if (!accountExists) {
-                                ScaffoldMessenger.of(ctx).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Selected account not found'),
-                                    backgroundColor: BF.red,
-                                    duration: Duration(seconds: 2),
-                                  ),
-                                );
-                                return;
-                              }
+                              // Resolve final category string
+                              final finalCategory =
+                                  (selectedCategory == 'Others' ||
+                                      isCustomCategory)
+                                  ? (categoryCtrl.text.trim().isEmpty
+                                        ? 'Others'
+                                        : categoryCtrl.text.trim())
+                                  : (selectedCategory.isEmpty
+                                        ? (categoryCtrl.text.trim().isEmpty
+                                              ? 'General'
+                                              : categoryCtrl.text.trim())
+                                        : selectedCategory);
 
                               setS(() => isSaving = true);
 
                               final title = noteCtrl.text.trim().isEmpty
                                   ? (isIncome ? 'Income' : 'Expense')
                                   : noteCtrl.text.trim();
-                              final category = categoryCtrl.text.trim().isEmpty
-                                  ? 'General'
-                                  : categoryCtrl.text.trim();
 
-                              // Format date
                               final now = DateTime.now();
-                              final year = now.year;
-                              final month = now.month.toString().padLeft(
-                                2,
-                                '0',
-                              );
-                              final day = now.day.toString().padLeft(2, '0');
-                              final hour = now.hour.toString().padLeft(2, '0');
-                              final minute = now.minute.toString().padLeft(
-                                2,
-                                '0',
-                              );
-                              final second = now.second.toString().padLeft(
-                                2,
-                                '0',
-                              );
                               final dateStr =
-                                  '$year-$month-$day $hour:$minute:$second';
-
-                              // Debug prints
-                              debugPrint(
-                                '[ADD TX] ===== STARTING TRANSACTION =====',
-                              );
-                              debugPrint('[ADD TX] User ID: ${widget.userId}');
-                              debugPrint('[ADD TX] Title: $title');
-                              debugPrint('[ADD TX] Amount: $amount');
-                              debugPrint('[ADD TX] Is Income: $isIncome');
-                              debugPrint('[ADD TX] Category: $category');
-                              debugPrint(
-                                '[ADD TX] Account ID: $localAccountId',
-                              );
-                              debugPrint(
-                                '[ADD TX] Note: ${noteCtrl.text.trim()}',
-                              );
-                              debugPrint('[ADD TX] Date: $dateStr');
-
-                              Map<String, dynamic> result;
+                                  '${now.year}-${now.month.toString().padLeft(2, '0')}-'
+                                  '${now.day.toString().padLeft(2, '0')} '
+                                  '${now.hour.toString().padLeft(2, '0')}:'
+                                  '${now.minute.toString().padLeft(2, '0')}:'
+                                  '${now.second.toString().padLeft(2, '0')}';
 
                               try {
+                                final Map<String, dynamic> result;
                                 if (existing != null) {
                                   result = await editTransactionAPI(
                                     id: int.parse(existing['id'].toString()),
@@ -1059,9 +1343,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                     title: title,
                                     amount: amount,
                                     isIncome: isIncome,
-                                    category: category,
-                                    accountId:
-                                        localAccountId, // ✅ Use localAccountId
+                                    category: finalCategory,
+                                    accountId: localAccountId,
                                     note: noteCtrl.text.trim(),
                                   );
                                 } else {
@@ -1070,62 +1353,52 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                                     title: title,
                                     amount: amount,
                                     isIncome: isIncome,
-                                    category: category,
-                                    accountId:
-                                        localAccountId, // ✅ Use localAccountId
+                                    category: finalCategory,
+                                    accountId: localAccountId,
                                     note: noteCtrl.text.trim(),
                                     date: dateStr,
                                   );
                                 }
-
-                                debugPrint('[ADD TX] Result: $result');
-
                                 if (result['status'] == 'success') {
                                   await _loadData();
                                   if (ctx.mounted) {
                                     ScaffoldMessenger.of(ctx).showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text(
-                                          'Transaction added successfully!',
+                                          existing != null
+                                              ? 'Transaction updated!'
+                                              : 'Transaction added!',
                                         ),
                                         backgroundColor: BF.green,
-                                        duration: Duration(seconds: 2),
+                                        duration: const Duration(seconds: 2),
                                       ),
                                     );
                                     Navigator.pop(ctx);
                                   }
                                 } else {
-                                  final errorMsg =
-                                      result['message'] ??
-                                      'Something went wrong';
-                                  debugPrint(
-                                    '[ADD TX] Error from server: $errorMsg',
-                                  );
-                                  if (ctx.mounted) {
+                                  if (ctx.mounted)
                                     ScaffoldMessenger.of(ctx).showSnackBar(
                                       SnackBar(
-                                        content: Text(errorMsg),
+                                        content: Text(
+                                          result['message'] ??
+                                              'Something went wrong',
+                                        ),
                                         backgroundColor: BF.red,
-                                        duration: Duration(seconds: 3),
+                                        duration: const Duration(seconds: 3),
                                       ),
                                     );
-                                  }
                                 }
                               } catch (e) {
-                                debugPrint('[ADD TX] Exception: $e');
-                                if (ctx.mounted) {
+                                if (ctx.mounted)
                                   ScaffoldMessenger.of(ctx).showSnackBar(
                                     SnackBar(
                                       content: Text('Error: $e'),
                                       backgroundColor: BF.red,
-                                      duration: Duration(seconds: 3),
+                                      duration: const Duration(seconds: 3),
                                     ),
                                   );
-                                }
                               } finally {
-                                if (ctx.mounted) {
-                                  setS(() => isSaving = false);
-                                }
+                                if (ctx.mounted) setS(() => isSaving = false);
                               }
                             },
                       child: isSaving
@@ -1156,7 +1429,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   // ══════════════════════════════════════════════════════════════════════════
   // ACTIVITY PAGE
   // ══════════════════════════════════════════════════════════════════════════
-
   Widget _activityPage() {
     final isDark = _isDarkMode;
     final txs = _filteredTxs;
@@ -1287,7 +1559,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ],
           ),
         ),
-        // Summary row for filtered results
         if (_s.transactions.isNotEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
@@ -1366,23 +1637,39 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PROFILE PAGE
+  // PROFILE PAGE  (enhanced with real transaction/expense reflection)
   // ══════════════════════════════════════════════════════════════════════════
-
   Widget _profilePage() {
     final isDark = _isDarkMode;
-    final totalIncome = _s.transactions
-        .where((t) => t['isIncome'])
-        .fold(0.0, (s, t) => s + (t['amount'] as double));
-    final totalExpense = _s.transactions
-        .where((t) => !t['isIncome'])
-        .fold(0.0, (s, t) => s + (t['amount'] as double));
+    final allStats = _allTimeStats;
+    final monthStats = _thisMonthStats;
+    final totalIncome = allStats['income']!;
+    final totalExpense = allStats['expense']!;
+    final netWorth = _balance;
+    final savingsRate = totalIncome > 0
+        ? ((totalIncome - totalExpense) / totalIncome * 100).clamp(0.0, 100.0)
+        : 0.0;
+    final txCount = _s.transactions.length;
+    final goalCount = _s.savingsGoals.length;
+    final accCount = _s.accounts.length;
+
+    // Top categories by spend
+    final Map<String, double> catMap = {};
+    for (var tx in _s.transactions.where((t) => !(t['isIncome'] as bool))) {
+      final c = tx['category'] as String;
+      catMap[c] = (catMap[c] ?? 0) + (tx['amount'] as double);
+    }
+    final topCats =
+        (catMap.entries.toList()..sort((a, b) => b.value.compareTo(a.value)))
+            .take(3)
+            .toList();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
           const SizedBox(height: 16),
+
           // ── Profile Hero Card ─────────────────────────────────────────
           Container(
             width: double.infinity,
@@ -1408,7 +1695,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
             child: Column(
               children: [
-                // Tappable avatar with camera badge
                 GestureDetector(
                   onTap: _pickProfileImage,
                   child: Stack(
@@ -1458,7 +1744,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   ),
                 ),
                 const SizedBox(height: 16),
-                // Dark mode toggle inside profile card
+
+                // Quick stats row inside hero
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    _heroStat("$txCount", "Transactions"),
+                    _heroDivider(),
+                    _heroStat("$goalCount", "Goals"),
+                    _heroDivider(),
+                    _heroStat("$accCount", "Accounts"),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
                 GestureDetector(
                   onTap: () {
                     setState(() => _isDarkMode = !_isDarkMode);
@@ -1503,46 +1802,221 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(height: 18),
+
+          // ── Financial Summary Section ─────────────────────────────────
+          _sectionHead("Financial Summary", isDark),
+          const SizedBox(height: 12),
+
+          // Net worth card
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  BF.accent.withOpacity(0.15),
+                  BF.accentSoft.withOpacity(0.08),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: BF.accent.withOpacity(0.25)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: BF.accent.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.account_balance_wallet_rounded,
+                    color: BF.accent,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Net Worth",
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 12,
+                          color: isDark ? Colors.white54 : Colors.black45,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        currency.format(netWorth),
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w800,
+                          fontSize: 22,
+                          color: netWorth >= 0 ? BF.green : BF.red,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      "${savingsRate.toStringAsFixed(1)}%",
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        fontWeight: FontWeight.w700,
+                        fontSize: 18,
+                        color: BF.accent,
+                      ),
+                    ),
+                    Text(
+                      "savings rate",
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 10,
+                        color: isDark ? Colors.white38 : Colors.black38,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          // Income vs Expense row
           Row(
             children: [
               Expanded(
-                child: _statBox(
-                  "Transactions",
-                  "${_s.transactions.length}",
+                child: _profileFinCard(
+                  "Total Income",
+                  currency.format(totalIncome),
+                  BF.green,
+                  Icons.arrow_downward_rounded,
                   isDark,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _statBox("Goals", "${_s.savingsGoals.length}", isDark),
+                child: _profileFinCard(
+                  "Total Spent",
+                  currency.format(totalExpense),
+                  BF.red,
+                  Icons.arrow_upward_rounded,
+                  isDark,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 10),
+
+          // This month
           Row(
             children: [
               Expanded(
-                child: _statBox2(
-                  "Total Income",
-                  currency.format(totalIncome),
+                child: _profileFinCard(
+                  "This Month In",
+                  currency.format(monthStats['income']!),
                   BF.green,
+                  Icons.calendar_today_rounded,
                   isDark,
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: _statBox2(
-                  "Total Spent",
-                  currency.format(totalExpense),
+                child: _profileFinCard(
+                  "This Month Out",
+                  currency.format(monthStats['expense']!),
                   BF.red,
+                  Icons.calendar_today_rounded,
                   isDark,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 22),
+
+          // ── Top Spending Categories ──────────────────────────────────
+          if (topCats.isNotEmpty) ...[
+            const SizedBox(height: 18),
+            _sectionHead("Top Spending", isDark),
+            const SizedBox(height: 12),
+            ...topCats.map((e) {
+              final pct = totalExpense > 0 ? e.value / totalExpense : 0.0;
+              final color = TxCategories.colorFor(e.key);
+              return Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(14),
+                decoration: BF.card(isDark),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          TxCategories.emojiFor(e.key),
+                          style: const TextStyle(fontSize: 20),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            e.key,
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: isDark ? Colors.white : Colors.black87,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          currency.format(e.value),
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                            color: color,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: LinearProgressIndicator(
+                        value: pct.clamp(0.0, 1.0),
+                        backgroundColor: color.withOpacity(0.1),
+                        valueColor: AlwaysStoppedAnimation(color),
+                        minHeight: 5,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        "${(pct * 100).toStringAsFixed(1)}% of spending",
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 10,
+                          color: isDark ? Colors.white38 : Colors.black38,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+
+          const SizedBox(height: 18),
           _sectionHead("Features", isDark),
           const SizedBox(height: 12),
+
           _profileLink(
             isDark,
             Icons.wallet_rounded,
@@ -1569,7 +2043,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             Icons.account_balance_rounded,
             "Accounts & Wallets",
             const Color(0xFFEC4899),
-            () => _push(AccountsPage()),
+            () => _push(AccountsPage(userId: widget.userId)),
           ),
           _profileLink(
             isDark,
@@ -1578,6 +2052,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             const Color(0xFF8B5CF6),
             () => _push(SavingsPage()),
           ),
+
           const SizedBox(height: 20),
           SizedBox(
             width: double.infinity,
@@ -1616,11 +2091,101 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
+  // ── Hero stat helpers ─────────────────────────────────────────────────────
+  Widget _heroStat(String value, String label) => Column(
+    children: [
+      Text(
+        value,
+        style: const TextStyle(
+          fontFamily: 'Poppins',
+          fontWeight: FontWeight.w800,
+          fontSize: 18,
+          color: Colors.white,
+        ),
+      ),
+      Text(
+        label,
+        style: TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 11,
+          color: Colors.white.withOpacity(0.55),
+        ),
+      ),
+    ],
+  );
+
+  Widget _heroDivider() =>
+      Container(width: 1, height: 32, color: Colors.white.withOpacity(0.2));
+
+  Widget _profileFinCard(
+    String label,
+    String value,
+    Color color,
+    IconData icon,
+    bool isDark,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 16),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 10,
+                    color: isDark ? Colors.white38 : Colors.black38,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    color: color,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // SHARED WIDGETS
   // ══════════════════════════════════════════════════════════════════════════
+  Widget _sheetHandle() => Container(
+    width: 40,
+    height: 4,
+    decoration: BoxDecoration(
+      color: _isDarkMode ? Colors.white24 : Colors.black12,
+      borderRadius: BorderRadius.circular(10),
+    ),
+  );
 
-  /// Avatar widget that shows profile photo if set, otherwise initials
   Widget _avatarWidget(String name, {double size = 44}) {
     if (_profileImagePath != null) {
       return ClipRRect(
@@ -1769,7 +2334,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         'label': 'Accounts',
         'icon': Icons.account_balance_rounded,
         'color': const Color(0xFFEC4899),
-        'page': AccountsPage(),
+        'page': AccountsPage(userId: widget.userId),
       },
       {
         'label': 'Savings',
@@ -1957,6 +2522,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         'emoji': tx['accountEmoji'] ?? '',
       },
     );
+    final catColor = TxCategories.colorFor(tx['category'] as String);
+    final catEmoji = TxCategories.emojiFor(tx['category'] as String);
 
     return Dismissible(
       key: Key(id),
@@ -1999,16 +2566,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 decoration: BoxDecoration(
                   color: isIncome
                       ? BF.green.withOpacity(0.12)
-                      : BF.red.withOpacity(0.12),
+                      : catColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(13),
                 ),
-                child: Icon(
-                  isIncome
-                      ? Icons.arrow_downward_rounded
-                      : Icons.arrow_upward_rounded,
-                  color: isIncome ? BF.green : BF.red,
-                  size: 20,
-                ),
+                alignment: Alignment.center,
+                child: isIncome
+                    ? Icon(
+                        Icons.arrow_downward_rounded,
+                        color: BF.green,
+                        size: 20,
+                      )
+                    : Text(catEmoji, style: const TextStyle(fontSize: 20)),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -2033,16 +2601,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: BF.accent.withOpacity(0.1),
+                            color: catColor.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
                             tx['category'],
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontFamily: 'Poppins',
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
-                              color: BF.accent,
+                              color: catColor,
                             ),
                           ),
                         ),
@@ -2187,6 +2755,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   Widget _catChip(String label, String percent, bool isDark) {
+    final color = TxCategories.colorFor(label);
+    final emoji = TxCategories.emojiFor(label);
     return Container(
       width: 130,
       margin: const EdgeInsets.only(right: 12),
@@ -2200,14 +2770,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             width: 30,
             height: 30,
             decoration: BoxDecoration(
-              color: BF.accent.withOpacity(0.12),
+              color: color.withOpacity(0.12),
               borderRadius: BorderRadius.circular(9),
             ),
-            child: const Icon(
-              Icons.category_rounded,
-              size: 15,
-              color: BF.accent,
-            ),
+            alignment: Alignment.center,
+            child: Text(emoji, style: const TextStyle(fontSize: 14)),
           ),
           const SizedBox(height: 8),
           Text(
@@ -2464,7 +3031,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     );
   }
 
-  Widget _statBox(String label, String value, bool isDark) {
+  Widget statBox(String label, String value, bool isDark) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BF.card(isDark),
@@ -2488,37 +3055,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               color: isDark ? Colors.white38 : Colors.black38,
             ),
             textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statBox2(String label, String value, Color color, bool isDark) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BF.card(isDark),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              fontFamily: 'Poppins',
-              color: isDark ? Colors.white38 : Colors.black38,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              fontFamily: 'Poppins',
-              color: color,
-            ),
-            overflow: TextOverflow.ellipsis,
           ),
         ],
       ),

@@ -300,6 +300,7 @@ Future<Map<String, dynamic>> deleteTransactionAPI({
 }
 
 // ─── BUDGETS ─────────────────────────────────────────────────────────────────
+// ─── BUDGETS ─────────────────────────────────────────────────────────────────
 Future<List<Map<String, dynamic>>> fetchBudgets(int userId) async {
   try {
     final res = await http
@@ -311,8 +312,11 @@ Future<List<Map<String, dynamic>>> fetchBudgets(int userId) async {
         return {
           'id': b['id'].toString(),
           'category': b['category'] as String,
-          'limit': (b['limit'] as num).toDouble(),
+          'limit': (b['budget_limit'] as num)
+              .toDouble(), // Note: field name in DB
           'spent': (b['spent'] as num).toDouble(),
+          'emoji': b['emoji'] as String? ?? '💰', // Add emoji
+          'period': b['period'] as String? ?? 'Monthly', // Add period
         };
       }).toList();
     }
@@ -323,6 +327,87 @@ Future<List<Map<String, dynamic>>> fetchBudgets(int userId) async {
   }
 }
 
+// Add this new method for adding/updating budgets with emoji and period
+Future<Map<String, dynamic>> addBudgetAPI({
+  required int userId,
+  required String category,
+  required double limit,
+  required String emoji,
+  required String period,
+}) async {
+  try {
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/add_budget.php'), // New endpoint
+          headers: _getHeaders(),
+          body: {
+            'user_id': userId.toString(),
+            'category': category,
+            'budget_limit': limit.toString(),
+            'emoji': emoji,
+            'period': period,
+          },
+        )
+        .timeout(_timeout);
+    return await _parseResponse(res, 'AddBudget');
+  } catch (e) {
+    return {"status": "error", "message": "Add budget failed: $e"};
+  }
+}
+
+// Update existing budget
+Future<Map<String, dynamic>> updateBudgetAPI({
+  required int budgetId,
+  required int userId,
+  required String category,
+  required double limit,
+  required String emoji,
+  required String period,
+}) async {
+  try {
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/update_budget.php'),
+          headers: _getHeaders(),
+          body: {
+            'budget_id': budgetId.toString(),
+            'user_id': userId.toString(),
+            'category': category,
+            'budget_limit': limit.toString(),
+            'emoji': emoji,
+            'period': period,
+          },
+        )
+        .timeout(_timeout);
+    return await _parseResponse(res, 'UpdateBudget');
+  } catch (e) {
+    return {"status": "error", "message": "Update budget failed: $e"};
+  }
+}
+
+// Delete budget
+Future<Map<String, dynamic>> deleteBudgetAPI({
+  required int budgetId,
+  required int userId,
+}) async {
+  try {
+    final res = await http
+        .post(
+          Uri.parse('$baseUrl/delete_budget.php'),
+          headers: _getHeaders(),
+          body: {
+            'budget_id': budgetId.toString(),
+            'user_id': userId.toString(),
+          },
+        )
+        .timeout(_timeout);
+    return await _parseResponse(res, 'DeleteBudget');
+  } catch (e) {
+    return {"status": "error", "message": "Delete budget failed: $e"};
+  }
+}
+
+// Optional: Keep the old saveBudgetAPI for backward compatibility
 Future<Map<String, dynamic>> saveBudgetAPI({
   required int userId,
   required String category,

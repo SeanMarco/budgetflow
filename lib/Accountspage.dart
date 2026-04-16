@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'main.dart' show BF;
 import 'AppState.dart';
+import 'api_service.dart';
 
 class AccountsPage extends StatefulWidget {
-  const AccountsPage({super.key});
+  final int userId;
+  const AccountsPage({super.key, required this.userId});
   @override
   State<AccountsPage> createState() => _AccountsPageState();
 }
 
 class _AccountsPageState extends State<AccountsPage> {
   final currency = NumberFormat.currency(locale: 'en_PH', symbol: '₱');
+  bool _loading = false;
 
   final _accountColors = [
     BF.green,
@@ -22,6 +25,34 @@ class _AccountsPageState extends State<AccountsPage> {
   ];
 
   AppState get _s => AppStateScope.of(context);
+
+  // Convert Color to hex string for API
+  String _colorToHex(Color c) =>
+      '#${c.red.toRadixString(16).padLeft(2, '0')}'
+      '${c.green.toRadixString(16).padLeft(2, '0')}'
+      '${c.blue.toRadixString(16).padLeft(2, '0')}';
+
+  Future<void> _deleteAccount(String accountId) async {
+    // Check if any transactions use this account
+    final hasTransactions = _s.transactions.any(
+      (tx) => tx['accountId'].toString() == accountId,
+    );
+    if (hasTransactions) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Cannot delete account with existing transactions.',
+            style: TextStyle(fontFamily: 'Poppins'),
+          ),
+          backgroundColor: BF.red,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+    // Only delete locally since we don't have a delete_account.php yet
+    _s.deleteAccount(accountId);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -157,10 +188,16 @@ class _AccountsPageState extends State<AccountsPage> {
   }
 
   Widget _accountCard(Map<String, dynamic> account, int index, bool isDark) {
-    final color =
-        account['color'] as Color? ??
-        _accountColors[index % _accountColors.length];
+    final color = account['color'] is Color
+        ? account['color'] as Color
+        : _accountColors[index % _accountColors.length];
     final balance = account['balance'] as double;
+
+    // ✅ FIX: only show delete if there are NO transactions on this account
+    final hasTransactions = _s.transactions.any(
+      (tx) => tx['accountId'].toString() == account['id'].toString(),
+    );
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(18),
@@ -230,10 +267,11 @@ class _AccountsPageState extends State<AccountsPage> {
                   color: balance >= 0 ? BF.green : BF.red,
                 ),
               ),
-              if (account['id'] != 'cash_default') ...[
+              // ✅ FIX: only show delete if account has no transactions
+              if (!hasTransactions) ...[
                 const SizedBox(height: 4),
                 GestureDetector(
-                  onTap: () => _s.deleteAccount(account['id'] as String),
+                  onTap: () => _confirmDelete(account, isDark),
                   child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
@@ -255,6 +293,52 @@ class _AccountsPageState extends State<AccountsPage> {
     );
   }
 
+  // ✅ Confirmation dialog before delete
+  void _confirmDelete(Map<String, dynamic> account, bool isDark) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: isDark ? BF.darkCard : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(
+          "Delete Account?",
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w700,
+            color: isDark ? Colors.white : Colors.black87,
+          ),
+        ),
+        content: Text(
+          "Are you sure you want to delete \"${account['name']}\"? This cannot be undone.",
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 13,
+            color: isDark ? Colors.white54 : Colors.black54,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text(
+              "Cancel",
+              style: TextStyle(fontFamily: 'Poppins', color: BF.accent),
+            ),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _s.deleteAccount(account['id'].toString());
+            },
+            child: const Text(
+              "Delete",
+              style: TextStyle(fontFamily: 'Poppins', color: BF.red),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _addBtn(bool isDark) => GestureDetector(
     onTap: () => _showAddSheet(isDark),
     child: Container(
@@ -266,14 +350,10 @@ class _AccountsPageState extends State<AccountsPage> {
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.add_circle_outline_rounded,
-            color: BF.accent,
-            size: 20,
-          ),
-          const SizedBox(width: 8),
-          const Text(
+        children: const [
+          Icon(Icons.add_circle_outline_rounded, color: BF.accent, size: 20),
+          SizedBox(width: 8),
+          Text(
             "Add New Account",
             style: TextStyle(
               fontFamily: 'Poppins',
@@ -324,6 +404,7 @@ class _AccountsPageState extends State<AccountsPage> {
     ),
   );
 
+  // ✅ FIX: Add account via API, not just locally
   void _showAddSheet(bool isDark) {
     final nameCtrl = TextEditingController();
     final balanceCtrl = TextEditingController();
@@ -332,6 +413,7 @@ class _AccountsPageState extends State<AccountsPage> {
     Color color = _accountColors[0];
     final types = ['Cash', 'Bank', 'E-Wallet', 'Credit Card', 'Savings'];
     final emojis = ['🏦', '💵', '📱', '💳', '🏧', '💰', '🪙', '💎'];
+    bool isSaving = false;
 
     showModalBottomSheet(
       context: context,
@@ -429,55 +511,110 @@ class _AccountsPageState extends State<AccountsPage> {
                 ),
                 const SizedBox(height: 14),
                 Row(
-                  children: _accountColors
-                      .map(
-                        (c) => GestureDetector(
-                          onTap: () => setS(() => color = c),
-                          child: Container(
-                            width: 34,
-                            height: 34,
-                            margin: const EdgeInsets.only(right: 8),
-                            decoration: BoxDecoration(
-                              color: c,
-                              shape: BoxShape.circle,
-                              border: color == c
-                                  ? Border.all(
-                                      color: isDark
-                                          ? Colors.white
-                                          : Colors.black,
-                                      width: 2.5,
-                                    )
-                                  : null,
-                              boxShadow: color == c
-                                  ? [
-                                      BoxShadow(
-                                        color: c.withOpacity(0.4),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 3),
-                                      ),
-                                    ]
-                                  : [],
-                            ),
-                          ),
+                  children: _accountColors.map((c) {
+                    return GestureDetector(
+                      onTap: () => setS(() => color = c),
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: c,
+                          shape: BoxShape.circle,
+                          border: color == c
+                              ? Border.all(
+                                  color: isDark ? Colors.white : Colors.black,
+                                  width: 2.5,
+                                )
+                              : null,
+                          boxShadow: color == c
+                              ? [
+                                  BoxShadow(
+                                    color: c.withOpacity(0.4),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ]
+                              : [],
                         ),
-                      )
-                      .toList(),
+                      ),
+                    );
+                  }).toList(),
                 ),
                 const SizedBox(height: 20),
-                _submitBtn(
-                  label: "Add Account",
-                  onTap: () {
-                    if (nameCtrl.text.isEmpty) return;
-                    _s.addAccount({
-                      'id': UniqueKey().toString(),
-                      'name': nameCtrl.text,
-                      'type': type,
-                      'emoji': emoji,
-                      'balance': double.tryParse(balanceCtrl.text) ?? 0.0,
-                      'color': color,
-                    });
-                    Navigator.pop(ctx);
-                  },
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: BF.accent,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      textStyle: const TextStyle(
+                        fontFamily: 'Poppins',
+                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                      ),
+                    ),
+                    onPressed: isSaving
+                        ? null
+                        : () async {
+                            if (nameCtrl.text.trim().isEmpty) return;
+                            setS(() => isSaving = true);
+
+                            final balance =
+                                double.tryParse(balanceCtrl.text) ?? 0.0;
+                            final colorHex = _colorToHex(color);
+
+                            // ✅ Save to API
+                            final res = await addAccountAPI(
+                              userId: widget.userId,
+                              name: nameCtrl.text.trim(),
+                              type: type,
+                              emoji: emoji,
+                              balance: balance,
+                              color: colorHex,
+                            );
+
+                            if (res['status'] == 'success') {
+                              // Add to local state with real DB id
+                              _s.addAccount({
+                                'id': res['data']['id'].toString(),
+                                'name': nameCtrl.text.trim(),
+                                'type': type,
+                                'emoji': emoji,
+                                'balance': balance,
+                                'color': color,
+                              });
+                              if (ctx.mounted) Navigator.pop(ctx);
+                            } else {
+                              if (ctx.mounted) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      res['message'] ?? 'Failed to add account',
+                                    ),
+                                    backgroundColor: BF.red,
+                                  ),
+                                );
+                              }
+                            }
+                            if (ctx.mounted) setS(() => isSaving = false);
+                          },
+                    child: isSaving
+                        ? const SizedBox(
+                            height: 20,
+                            width: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text("Add Account"),
+                  ),
                 ),
               ],
             ),
@@ -489,8 +626,8 @@ class _AccountsPageState extends State<AccountsPage> {
 
   void _showTransferSheet(bool isDark) {
     final accounts = _s.accounts;
-    String fromId = accounts[0]['id'] as String;
-    String toId = accounts[1]['id'] as String;
+    String fromId = accounts[0]['id'].toString();
+    String toId = accounts[1]['id'].toString();
     final amountCtrl = TextEditingController();
 
     showModalBottomSheet(
@@ -656,26 +793,24 @@ class _AccountsPageState extends State<AccountsPage> {
             fontSize: 14,
             color: isDark ? Colors.white : Colors.black87,
           ),
-          items: accounts
-              .map(
-                (a) => DropdownMenuItem<String>(
-                  value: a['id'] as String,
-                  child: Row(
-                    children: [
-                      Text(
-                        a['emoji'] ?? '💰',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        a['name'],
-                        style: const TextStyle(fontFamily: 'Poppins'),
-                      ),
-                    ],
+          items: accounts.map((a) {
+            return DropdownMenuItem<String>(
+              value: a['id'].toString(),
+              child: Row(
+                children: [
+                  Text(
+                    a['emoji'] ?? '💰',
+                    style: const TextStyle(fontSize: 16),
                   ),
-                ),
-              )
-              .toList(),
+                  const SizedBox(width: 8),
+                  Text(
+                    a['name'],
+                    style: const TextStyle(fontFamily: 'Poppins'),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
           onChanged: onChanged,
         ),
       ),
