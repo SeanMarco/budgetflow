@@ -1,73 +1,66 @@
-CREATE DATABASE budgetflow
+CREATE DATABASE IF NOT EXISTS budgetflow CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE budgetflow;
 
-CREATE TABLE users (
-    id INT(11) NOT NULL AUTO_INCREMENT,
-    first_name VARCHAR(100) NOT NULL,
-    last_name VARCHAR(100) NOT NULL,
-    email VARCHAR(255) NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    PRIMARY KEY (id)
+-- Users (you likely have this already)
+CREATE TABLE IF NOT EXISTS users (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  email      VARCHAR(191) NOT NULL UNIQUE,
+  password   VARCHAR(255) NOT NULL,
+  first_name VARCHAR(100) NOT NULL,
+  last_name  VARCHAR(100) NOT NULL,
+  token      VARCHAR(64)  DEFAULT NULL,
+  last_login DATETIME     DEFAULT NULL,
+  created_at DATETIME     DEFAULT CURRENT_TIMESTAMP
 );
 
-
-CREATE TABLE accounts (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT,
-    name VARCHAR(100),
-    balance DECIMAL(12,2) DEFAULT 0,
-    emoji VARCHAR(10),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+-- Accounts / wallets
+CREATE TABLE IF NOT EXISTS accounts (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT          NOT NULL,
+  name       VARCHAR(100) NOT NULL,
+  type       VARCHAR(50)  NOT NULL DEFAULT 'Cash',
+  emoji      VARCHAR(10)  NOT NULL DEFAULT '💰',
+  balance    DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  color      VARCHAR(20)  DEFAULT '#0EA974',
+  created_at DATETIME     DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE TABLE transactions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT,
-    account_id INT,
-    title VARCHAR(255),
-    amount DECIMAL(12,2),
-    is_income BOOLEAN,
-    category VARCHAR(100),
-    note TEXT,
-    date DATETIME,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
+-- Transactions
+CREATE TABLE IF NOT EXISTS transactions (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT           NOT NULL,
+  account_id INT           NOT NULL,
+  title      VARCHAR(200)  NOT NULL,
+  amount     DECIMAL(15,2) NOT NULL,
+  is_income  TINYINT(1)    NOT NULL DEFAULT 0,
+  category   VARCHAR(100)  NOT NULL DEFAULT 'General',
+  note       TEXT          DEFAULT '',
+  date       DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at DATETIME      DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id)    REFERENCES users(id)    ON DELETE CASCADE,
+  FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 
-CREATE TABLE budgets (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT,
-    category VARCHAR(100),
-    `limit` DECIMAL(12,2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+-- Budgets
+CREATE TABLE IF NOT EXISTS budgets (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  user_id      INT           NOT NULL,
+  category     VARCHAR(100)  NOT NULL,
+  budget_limit DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  created_at   DATETIME      DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_cat (user_id, category),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-
-CREATE TABLE savings_goals (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT,
-    title VARCHAR(255),
-    target DECIMAL(12,2),
-    saved DECIMAL(12,2) DEFAULT 0,
-    emoji VARCHAR(10),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
-
-CREATE TABLE recurring_transactions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT,
-    account_id INT,
-    title VARCHAR(255),
-    amount DECIMAL(12,2),
-    is_income BOOLEAN,
-    category VARCHAR(100),
-    frequency ENUM('daily', 'weekly', 'monthly'),
-    next_run DATETIME,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
+-- Savings goals
+CREATE TABLE IF NOT EXISTS savings_goals (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  user_id    INT           NOT NULL,
+  title      VARCHAR(200)  NOT NULL,
+  emoji      VARCHAR(10)   DEFAULT '🎯',
+  target     DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  saved      DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  created_at DATETIME      DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
