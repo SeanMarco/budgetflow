@@ -1,7 +1,9 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:pie_chart/pie_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:image_picker/image_picker.dart';
 import 'main.dart' show BF, AuthPage;
 import 'AppState.dart';
 import 'BudgetPage.dart';
@@ -20,9 +22,14 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   int _tab = 0;
   bool _loading = true;
+  String? _profileImagePath;
+  bool _isDarkMode = true; // default dark
+  late AnimationController _themeAnimCtrl;
+  late AnimationController _fabAnimCtrl;
+
   final currency = NumberFormat.currency(locale: 'en_PH', symbol: '₱');
 
   String _searchQuery = '';
@@ -38,7 +45,36 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _themeAnimCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _fabAnimCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    )..forward();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
+    _loadPrefs();
+  }
+
+  @override
+  void dispose() {
+    _themeAnimCtrl.dispose();
+    _fabAnimCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPrefs() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _profileImagePath = prefs.getString('profile_image_path');
+      _isDarkMode = prefs.getBool('is_dark_mode') ?? true;
+    });
+  }
+
+  Future<void> _saveThemePref(bool isDark) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('is_dark_mode', isDark);
   }
 
   Future<void> _loadData() async {
@@ -46,7 +82,6 @@ class _HomePageState extends State<HomePage> {
     final s = AppStateScope.of(context);
 
     try {
-      // Fetch in parallel for speed
       final results = await Future.wait([
         fetchAccounts(widget.userId),
         fetchTransactions(widget.userId),
@@ -59,7 +94,6 @@ class _HomePageState extends State<HomePage> {
       final budgets = List<Map<String, dynamic>>.from(results[2] as List);
       final savingsGoals = List<Map<String, dynamic>>.from(results[3] as List);
 
-      // Replace state with fresh server data
       s.accounts.clear();
       s.transactions.clear();
       s.budgets.clear();
@@ -68,7 +102,6 @@ class _HomePageState extends State<HomePage> {
       if (accounts.isNotEmpty) {
         s.accounts.addAll(accounts);
       } else {
-        // Seed a default account for new users so the UI isn't empty
         final res = await addAccountAPI(
           userId: widget.userId,
           name: 'Cash Wallet',
@@ -108,6 +141,139 @@ class _HomePageState extends State<HomePage> {
     await prefs.remove('last_name');
   }
 
+  Future<void> _pickProfileImage() async {
+    final picker = ImagePicker();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: BoxDecoration(
+          color: _isDarkMode ? BF.darkCard : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: _isDarkMode ? Colors.white24 : Colors.black12,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              "Change Profile Photo",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Poppins',
+                color: _isDarkMode ? Colors.white : Colors.black87,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: _imageSourceOption(
+                    Icons.camera_alt_rounded,
+                    "Camera",
+                    const Color(0xFF3B82F6),
+                    () async {
+                      Navigator.pop(context);
+                      final img = await picker.pickImage(
+                        source: ImageSource.camera,
+                        imageQuality: 80,
+                      );
+                      if (img != null) {
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setString('profile_image_path', img.path);
+                        setState(() => _profileImagePath = img.path);
+                      }
+                    },
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _imageSourceOption(
+                    Icons.photo_library_rounded,
+                    "Gallery",
+                    BF.accent,
+                    () async {
+                      Navigator.pop(context);
+                      final img = await picker.pickImage(
+                        source: ImageSource.gallery,
+                        imageQuality: 80,
+                      );
+                      if (img != null) {
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.setString('profile_image_path', img.path);
+                        setState(() => _profileImagePath = img.path);
+                      }
+                    },
+                  ),
+                ),
+                if (_profileImagePath != null) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _imageSourceOption(
+                      Icons.delete_rounded,
+                      "Remove",
+                      BF.red,
+                      () async {
+                        Navigator.pop(context);
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.remove('profile_image_path');
+                        setState(() => _profileImagePath = null);
+                      },
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _imageSourceOption(
+    IconData icon,
+    String label,
+    Color color,
+    VoidCallback onTap,
+  ) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 28),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   List<Map<String, dynamic>> get _filteredTxs {
     return _s.transactions.where((tx) {
       if (_searchQuery.isNotEmpty) {
@@ -135,20 +301,54 @@ class _HomePageState extends State<HomePage> {
     ..._s.transactions.map((t) => t['category'] as String).toSet(),
   ];
 
+  // ── Quick Stats for dashboard ──────────────────────────────────────────
+  Map<String, double> get _thisMonthStats {
+    final now = DateTime.now();
+    double income = 0, expense = 0;
+    for (var tx in _s.transactions) {
+      final d = tx['date'] as DateTime;
+      if (d.year == now.year && d.month == now.month) {
+        if (tx['isIncome']) {
+          income += tx['amount'] as double;
+        } else {
+          expense += tx['amount'] as double;
+        }
+      }
+    }
+    return {'income': income, 'expense': expense};
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    // Override system brightness with local toggle
+    final brightness = _isDarkMode ? Brightness.dark : Brightness.light;
+    final isDark = _isDarkMode;
+
     if (_loading) {
-      return Scaffold(
-        backgroundColor: isDark ? BF.darkBg : BF.lightBg,
-        body: const Center(child: CircularProgressIndicator(color: BF.accent)),
+      return Theme(
+        data: ThemeData(brightness: brightness),
+        child: Scaffold(
+          backgroundColor: isDark ? BF.darkBg : BF.lightBg,
+          body: const Center(
+            child: CircularProgressIndicator(color: BF.accent),
+          ),
+        ),
       );
     }
-    return Scaffold(
-      backgroundColor: isDark ? BF.darkBg : BF.lightBg,
-      body: SafeArea(child: _page()),
-      bottomNavigationBar: _navBar(isDark),
-      floatingActionButton: _fab(),
+    return Theme(
+      data: ThemeData(brightness: brightness),
+      child: Scaffold(
+        backgroundColor: isDark ? BF.darkBg : BF.lightBg,
+        body: SafeArea(child: _page()),
+        bottomNavigationBar: _navBar(isDark),
+        floatingActionButton: ScaleTransition(
+          scale: CurvedAnimation(
+            parent: _fabAnimCtrl,
+            curve: Curves.elasticOut,
+          ),
+          child: _fab(),
+        ),
+      ),
     );
   }
 
@@ -248,7 +448,7 @@ class _HomePageState extends State<HomePage> {
   // ══════════════════════════════════════════════════════════════════════════
 
   Widget _dashboard() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark = _isDarkMode;
     double income = 0, expense = 0;
     final Map<String, double> catTotals = {};
     for (var tx in _s.transactions) {
@@ -261,6 +461,8 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
+    final monthStats = _thisMonthStats;
+
     return RefreshIndicator(
       color: BF.accent,
       onRefresh: _loadData,
@@ -270,6 +472,7 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Top Bar ──────────────────────────────────────────────────
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -297,7 +500,44 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ],
                 ),
-                _avatar(widget.username, size: 44),
+                Row(
+                  children: [
+                    // Dark mode toggle button
+                    GestureDetector(
+                      onTap: () {
+                        setState(() => _isDarkMode = !_isDarkMode);
+                        _saveThemePref(_isDarkMode);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.08)
+                              : Colors.black.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(13),
+                          border: Border.all(
+                            color: isDark ? BF.darkBorder : BF.lightBorder,
+                          ),
+                        ),
+                        child: Icon(
+                          isDark
+                              ? Icons.wb_sunny_rounded
+                              : Icons.nightlight_round,
+                          color: isDark ? Colors.amber : BF.accent,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    // Avatar → taps to Profile tab
+                    GestureDetector(
+                      onTap: () => setState(() => _tab = 2),
+                      child: _avatarWidget(widget.username, size: 44),
+                    ),
+                  ],
+                ),
               ],
             ),
             const SizedBox(height: 22),
@@ -312,6 +552,9 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             ),
+            const SizedBox(height: 14),
+            // ── This Month Card ──────────────────────────────────────────
+            _thisMonthCard(monthStats, isDark),
             const SizedBox(height: 18),
             _featureGrid(isDark),
             const SizedBox(height: 18),
@@ -375,17 +618,110 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ── This Month Summary Card ─────────────────────────────────────────────
+  Widget _thisMonthCard(Map<String, double> stats, bool isDark) {
+    final monthName = DateFormat('MMMM').format(DateTime.now());
+    final net = stats['income']! - stats['expense']!;
+    final isPositive = net >= 0;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withOpacity(0.04)
+            : Colors.black.withOpacity(0.02),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: isDark ? BF.darkBorder : BF.lightBorder),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: BF.accent.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Icon(
+              Icons.calendar_month_rounded,
+              color: BF.accent,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "$monthName Summary",
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12,
+                    color: isDark ? Colors.white54 : Colors.black45,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  "${isPositive ? '+' : ''}${currency.format(net)}",
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: isPositive ? BF.green : BF.red,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              _miniStat("In", stats['income']!, BF.green, isDark),
+              const SizedBox(height: 4),
+              _miniStat("Out", stats['expense']!, BF.red, isDark),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniStat(String label, double val, Color color, bool isDark) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          "$label: ",
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 10,
+            color: isDark ? Colors.white38 : Colors.black38,
+          ),
+        ),
+        Text(
+          currency.format(val),
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
-  // ADD / EDIT TRANSACTION SHEET — FRONTEND ONLY
+  // ADD / EDIT TRANSACTION SHEET
   // ══════════════════════════════════════════════════════════════════════════
 
   void _showTxSheet(BuildContext context, {Map<String, dynamic>? existing}) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark = _isDarkMode;
     final appState = _s;
 
     final amountCtrl = TextEditingController(
       text: existing != null
-          ? (existing['amount'] as double).toStringAsFixed(0)
+          ? (existing['amount'] as double).toStringAsFixed(2)
           : '',
     );
     final noteCtrl = TextEditingController(text: existing?['title'] ?? '');
@@ -394,249 +730,425 @@ class _HomePageState extends State<HomePage> {
     );
 
     bool isIncome = existing?['isIncome'] ?? true;
-    String accountId =
-        existing?['accountId'] ??
-        (appState.accounts.isNotEmpty
-            ? appState.accounts[0]['id'] as String
-            : 'cash_default');
+
+    // ✅ FIXED: Ensure accountId is properly set
+    String accountId = '';
+
+    // Initialize accountId properly
+    if (existing != null && existing['accountId'] != null) {
+      accountId = existing['accountId'].toString();
+    } else if (appState.accounts.isNotEmpty) {
+      accountId = appState.accounts[0]['id'].toString();
+    }
+
     bool isSaving = false;
+
+    // Debug print
+    debugPrint('[TX SHEET] Initial accountId: $accountId');
+    debugPrint('[TX SHEET] Available accounts: ${appState.accounts.length}');
+    for (var acc in appState.accounts) {
+      debugPrint('[TX SHEET] Account: ${acc['id']} - ${acc['name']}');
+    }
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(
-        builder: (ctx, setS) => Container(
-          decoration: BoxDecoration(
-            color: isDark ? BF.darkCard : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          padding: EdgeInsets.only(
-            left: 24,
-            right: 24,
-            top: 20,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 28,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white24 : Colors.black12,
-                      borderRadius: BorderRadius.circular(10),
+        builder: (ctx, setS) {
+          // Local state for dropdown
+          String localAccountId = accountId;
+
+          return Container(
+            decoration: BoxDecoration(
+              color: isDark ? BF.darkCard : Colors.white,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
+            padding: EdgeInsets.only(
+              left: 24,
+              right: 24,
+              top: 20,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 28,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.black12,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  existing != null ? "Edit Transaction" : "New Transaction",
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
-                    fontFamily: 'Poppins',
-                    color: isDark ? Colors.white : Colors.black87,
+                  const SizedBox(height: 20),
+                  Text(
+                    existing != null ? "Edit Transaction" : "New Transaction",
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'Poppins',
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Container(
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: isDark ? BF.darkSurface : BF.lightBg,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Row(
-                    children: [
-                      _toggle(
-                        "Income",
-                        true,
-                        isIncome,
-                        isDark,
-                        setS,
-                        () => isIncome = true,
-                      ),
-                      _toggle(
-                        "Expense",
-                        false,
-                        isIncome,
-                        isDark,
-                        setS,
-                        () => isIncome = false,
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _sheetField(
-                  amountCtrl,
-                  "Amount",
-                  isDark,
-                  prefix: "₱ ",
-                  type: TextInputType.number,
-                ),
-                const SizedBox(height: 12),
-                _sheetField(noteCtrl, "Title / Note", isDark),
-                const SizedBox(height: 12),
-                _sheetField(categoryCtrl, "Category", isDark),
-                const SizedBox(height: 12),
-                if (appState.accounts.isNotEmpty)
+                  const SizedBox(height: 20),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 4,
-                    ),
+                    height: 50,
                     decoration: BoxDecoration(
                       color: isDark ? BF.darkSurface : BF.lightBg,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isDark ? BF.darkBorder : BF.lightBorder,
-                      ),
                     ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: accountId,
-                        isExpanded: true,
-                        dropdownColor: isDark ? BF.darkCard : Colors.white,
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 14,
-                          color: isDark ? Colors.white : Colors.black87,
+                    child: Row(
+                      children: [
+                        _toggle(
+                          "Income",
+                          true,
+                          isIncome,
+                          isDark,
+                          setS,
+                          () => setS(() => isIncome = true),
                         ),
-                        items: appState.accounts.map((a) {
-                          return DropdownMenuItem<String>(
-                            value: a['id'] as String,
-                            child: Row(
-                              children: [
-                                Text(
-                                  a['emoji'] ?? '💰',
-                                  style: const TextStyle(fontSize: 16),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  a['name'],
-                                  style: const TextStyle(fontFamily: 'Poppins'),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (v) => setS(() => accountId = v!),
-                      ),
+                        _toggle(
+                          "Expense",
+                          false,
+                          isIncome,
+                          isDark,
+                          setS,
+                          () => setS(() => isIncome = false),
+                        ),
+                      ],
                     ),
                   ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: BF.accent,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 15),
-                      shape: RoundedRectangleBorder(
+                  const SizedBox(height: 14),
+                  _sheetField(
+                    amountCtrl,
+                    "Amount",
+                    isDark,
+                    prefix: "₱ ",
+                    type: TextInputType.number,
+                  ),
+                  const SizedBox(height: 12),
+                  _sheetField(noteCtrl, "Title / Note", isDark),
+                  const SizedBox(height: 12),
+                  _sheetField(categoryCtrl, "Category", isDark),
+                  const SizedBox(height: 12),
+                  // ✅ FIXED: Account dropdown with better handling
+                  if (appState.accounts.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: isDark ? BF.darkSurface : BF.lightBg,
                         borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isDark ? BF.darkBorder : BF.lightBorder,
+                        ),
                       ),
-                      textStyle: const TextStyle(
-                        fontFamily: 'Poppins',
-                        fontWeight: FontWeight.w600,
-                        fontSize: 15,
-                      ),
-                    ),
-                    // Inside _showTxSheet, replace the onPressed save logic:
-                    onPressed: isSaving
-                        ? null
-                        : () async {
-                            final amount =
-                                double.tryParse(amountCtrl.text.trim()) ?? 0;
-                            if (amount <= 0) {
-                              ScaffoldMessenger.of(ctx).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Please enter a valid amount'),
-                                ),
-                              );
-                              return;
-                            }
-                            setS(() => isSaving = true);
-
-                            final title = noteCtrl.text.trim().isEmpty
-                                ? (isIncome ? 'Income' : 'Expense')
-                                : noteCtrl.text.trim();
-                            final category = categoryCtrl.text.trim().isEmpty
-                                ? 'General'
-                                : categoryCtrl.text.trim();
-                            final now = DateTime.now();
-                            final dateStr =
-                                '${now.year}-${now.month.toString().padLeft(2, '0')}'
-                                '-${now.day.toString().padLeft(2, '0')} '
-                                '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:00';
-
-                            Map<String, dynamic> result;
-
-                            if (existing != null) {
-                              result = await editTransactionAPI(
-                                id: int.parse(existing['id'].toString()),
-                                userId: widget.userId,
-                                title: title,
-                                amount: amount,
-                                isIncome: isIncome,
-                                category: category,
-                                accountId: accountId,
-                                note: noteCtrl.text.trim(),
-                              );
-                            } else {
-                              result = await addTransactionAPI(
-                                userId: widget.userId,
-                                title: title,
-                                amount: amount,
-                                isIncome: isIncome,
-                                category: category,
-                                accountId: accountId,
-                                note: noteCtrl.text.trim(),
-                                date: dateStr,
-                              );
-                            }
-
-                            if (result['status'] == 'success') {
-                              // Reload data from server so balances and lists are authoritative
-                              await _loadData();
-                              if (ctx.mounted) Navigator.pop(ctx);
-                            } else {
-                              if (ctx.mounted)
-                                ScaffoldMessenger.of(ctx).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      result['message'] ??
-                                          'Something went wrong',
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: localAccountId.isNotEmpty
+                              ? localAccountId
+                              : null,
+                          isExpanded: true,
+                          hint: Text(
+                            "Select Account",
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              color: isDark ? Colors.white54 : Colors.black54,
+                            ),
+                          ),
+                          dropdownColor: isDark ? BF.darkCard : Colors.white,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 14,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                          items: appState.accounts.map((a) {
+                            return DropdownMenuItem<String>(
+                              value: a['id'].toString(),
+                              child: Row(
+                                children: [
+                                  Text(
+                                    a['emoji'] ?? '💰',
+                                    style: const TextStyle(fontSize: 16),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      a['name'],
+                                      style: const TextStyle(
+                                        fontFamily: 'Poppins',
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
                                     ),
                                   ),
-                                );
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${(a['balance'] as double).toStringAsFixed(0)}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: isDark
+                                          ? Colors.white38
+                                          : Colors.black38,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (v) {
+                            if (v != null) {
+                              setS(() {
+                                localAccountId = v;
+                              });
+                              debugPrint('[TX SHEET] Selected account: $v');
                             }
-                            setS(() => isSaving = false);
                           },
-                    child: isSaving
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: BF.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: BF.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.warning_rounded, color: BF.red, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              "No accounts found. Please create an account first.",
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 12,
+                                color: BF.red,
+                              ),
                             ),
-                          )
-                        : Text(
-                            existing != null
-                                ? "Save Changes"
-                                : "Add Transaction",
                           ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: BF.accent,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 15),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        textStyle: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w600,
+                          fontSize: 15,
+                        ),
+                      ),
+                      onPressed: isSaving
+                          ? null
+                          : () async {
+                              final amount =
+                                  double.tryParse(amountCtrl.text.trim()) ?? 0;
+
+                              // Validation
+                              if (amount <= 0) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Please enter a valid amount',
+                                    ),
+                                    backgroundColor: BF.red,
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              // ✅ FIXED: Check if account is selected
+                              if (localAccountId.isEmpty) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Please select an account'),
+                                    backgroundColor: BF.red,
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              // Check if account exists in the list
+                              final accountExists = appState.accounts.any(
+                                (a) => a['id'].toString() == localAccountId,
+                              );
+
+                              if (!accountExists) {
+                                ScaffoldMessenger.of(ctx).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Selected account not found'),
+                                    backgroundColor: BF.red,
+                                    duration: Duration(seconds: 2),
+                                  ),
+                                );
+                                return;
+                              }
+
+                              setS(() => isSaving = true);
+
+                              final title = noteCtrl.text.trim().isEmpty
+                                  ? (isIncome ? 'Income' : 'Expense')
+                                  : noteCtrl.text.trim();
+                              final category = categoryCtrl.text.trim().isEmpty
+                                  ? 'General'
+                                  : categoryCtrl.text.trim();
+
+                              // Format date
+                              final now = DateTime.now();
+                              final year = now.year;
+                              final month = now.month.toString().padLeft(
+                                2,
+                                '0',
+                              );
+                              final day = now.day.toString().padLeft(2, '0');
+                              final hour = now.hour.toString().padLeft(2, '0');
+                              final minute = now.minute.toString().padLeft(
+                                2,
+                                '0',
+                              );
+                              final second = now.second.toString().padLeft(
+                                2,
+                                '0',
+                              );
+                              final dateStr =
+                                  '$year-$month-$day $hour:$minute:$second';
+
+                              // Debug prints
+                              debugPrint(
+                                '[ADD TX] ===== STARTING TRANSACTION =====',
+                              );
+                              debugPrint('[ADD TX] User ID: ${widget.userId}');
+                              debugPrint('[ADD TX] Title: $title');
+                              debugPrint('[ADD TX] Amount: $amount');
+                              debugPrint('[ADD TX] Is Income: $isIncome');
+                              debugPrint('[ADD TX] Category: $category');
+                              debugPrint(
+                                '[ADD TX] Account ID: $localAccountId',
+                              );
+                              debugPrint(
+                                '[ADD TX] Note: ${noteCtrl.text.trim()}',
+                              );
+                              debugPrint('[ADD TX] Date: $dateStr');
+
+                              Map<String, dynamic> result;
+
+                              try {
+                                if (existing != null) {
+                                  result = await editTransactionAPI(
+                                    id: int.parse(existing['id'].toString()),
+                                    userId: widget.userId,
+                                    title: title,
+                                    amount: amount,
+                                    isIncome: isIncome,
+                                    category: category,
+                                    accountId:
+                                        localAccountId, // ✅ Use localAccountId
+                                    note: noteCtrl.text.trim(),
+                                  );
+                                } else {
+                                  result = await addTransactionAPI(
+                                    userId: widget.userId,
+                                    title: title,
+                                    amount: amount,
+                                    isIncome: isIncome,
+                                    category: category,
+                                    accountId:
+                                        localAccountId, // ✅ Use localAccountId
+                                    note: noteCtrl.text.trim(),
+                                    date: dateStr,
+                                  );
+                                }
+
+                                debugPrint('[ADD TX] Result: $result');
+
+                                if (result['status'] == 'success') {
+                                  await _loadData();
+                                  if (ctx.mounted) {
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Transaction added successfully!',
+                                        ),
+                                        backgroundColor: BF.green,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                    Navigator.pop(ctx);
+                                  }
+                                } else {
+                                  final errorMsg =
+                                      result['message'] ??
+                                      'Something went wrong';
+                                  debugPrint(
+                                    '[ADD TX] Error from server: $errorMsg',
+                                  );
+                                  if (ctx.mounted) {
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(
+                                        content: Text(errorMsg),
+                                        backgroundColor: BF.red,
+                                        duration: Duration(seconds: 3),
+                                      ),
+                                    );
+                                  }
+                                }
+                              } catch (e) {
+                                debugPrint('[ADD TX] Exception: $e');
+                                if (ctx.mounted) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Error: $e'),
+                                      backgroundColor: BF.red,
+                                      duration: Duration(seconds: 3),
+                                    ),
+                                  );
+                                }
+                              } finally {
+                                if (ctx.mounted) {
+                                  setS(() => isSaving = false);
+                                }
+                              }
+                            },
+                      child: isSaving
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              existing != null
+                                  ? "Save Changes"
+                                  : "Add Transaction",
+                            ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -646,7 +1158,7 @@ class _HomePageState extends State<HomePage> {
   // ══════════════════════════════════════════════════════════════════════════
 
   Widget _activityPage() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark = _isDarkMode;
     final txs = _filteredTxs;
 
     return Column(
@@ -775,6 +1287,12 @@ class _HomePageState extends State<HomePage> {
             ],
           ),
         ),
+        // Summary row for filtered results
+        if (_s.transactions.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: _activitySummaryBar(txs, isDark),
+          ),
         Expanded(
           child: txs.isEmpty
               ? _emptyState(
@@ -792,12 +1310,67 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _activitySummaryBar(List<Map<String, dynamic>> txs, bool isDark) {
+    double inc = 0, exp = 0;
+    for (var tx in txs) {
+      if (tx['isIncome']) {
+        inc += tx['amount'] as double;
+      } else {
+        exp += tx['amount'] as double;
+      }
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: BF.accent.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: BF.accent.withOpacity(0.15)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            "${txs.length} transaction${txs.length != 1 ? 's' : ''}",
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 11,
+              color: isDark ? Colors.white54 : Colors.black45,
+            ),
+          ),
+          Row(
+            children: [
+              Text(
+                "+${currency.format(inc)}",
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: BF.green,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                "-${currency.format(exp)}",
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: BF.red,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // PROFILE PAGE
   // ══════════════════════════════════════════════════════════════════════════
 
   Widget _profilePage() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isDark = _isDarkMode;
     final totalIncome = _s.transactions
         .where((t) => t['isIncome'])
         .fold(0.0, (s, t) => s + (t['amount'] as double));
@@ -810,6 +1383,7 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         children: [
           const SizedBox(height: 16),
+          // ── Profile Hero Card ─────────────────────────────────────────
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(28),
@@ -834,7 +1408,36 @@ class _HomePageState extends State<HomePage> {
             ),
             child: Column(
               children: [
-                _avatar(widget.username, size: 80),
+                // Tappable avatar with camera badge
+                GestureDetector(
+                  onTap: _pickProfileImage,
+                  child: Stack(
+                    children: [
+                      _avatarWidget(widget.username, size: 84),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFF3B30C4),
+                              width: 2,
+                            ),
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt_rounded,
+                            size: 13,
+                            color: Color(0xFF3B30C4),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 14),
                 Text(
                   widget.username,
@@ -852,6 +1455,48 @@ class _HomePageState extends State<HomePage> {
                     fontSize: 13,
                     fontFamily: 'Poppins',
                     color: Colors.white.withOpacity(0.55),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Dark mode toggle inside profile card
+                GestureDetector(
+                  onTap: () {
+                    setState(() => _isDarkMode = !_isDarkMode);
+                    _saveThemePref(_isDarkMode);
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isDark
+                              ? Icons.wb_sunny_rounded
+                              : Icons.nightlight_round,
+                          size: 16,
+                          color: Colors.white,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          isDark
+                              ? "Switch to Light Mode"
+                              : "Switch to Dark Mode",
+                          style: const TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -938,10 +1583,7 @@ class _HomePageState extends State<HomePage> {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () async {
-                // Only clear session data, NOT the app data
-                // This preserves all transactions, accounts, budgets, and savings goals
                 await _clearSessionData();
-
                 if (!mounted) return;
                 Navigator.pushAndRemoveUntil(
                   context,
@@ -977,6 +1619,23 @@ class _HomePageState extends State<HomePage> {
   // ══════════════════════════════════════════════════════════════════════════
   // SHARED WIDGETS
   // ══════════════════════════════════════════════════════════════════════════
+
+  /// Avatar widget that shows profile photo if set, otherwise initials
+  Widget _avatarWidget(String name, {double size = 44}) {
+    if (_profileImagePath != null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(size / 2),
+        child: Image.file(
+          File(_profileImagePath!),
+          width: size,
+          height: size,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => _avatar(name, size: size),
+        ),
+      );
+    }
+    return _avatar(name, size: size);
+  }
 
   Widget _balanceCard(bool isDark) {
     return Container(
@@ -1310,7 +1969,6 @@ class _HomePageState extends State<HomePage> {
         if (result['status'] == 'success') {
           await _loadData();
         } else {
-          // Put the item back if delete failed
           setState(() {});
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(result['message'] ?? 'Delete failed')),

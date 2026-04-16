@@ -7,10 +7,47 @@ import 'package:flutter/material.dart';
 ///   Android Emulator → http://10.0.2.2/budgetflow_api
 ///   Real device       → http://YOUR_LAN_IP/budgetflow_api
 ///   iOS Simulator     → http://localhost/budgetflow_api
-const String baseUrl = "http://localhost/budgetflow_api";
+///
+/// FIXED: Removed the extra 'r' from the IP address
+const String baseUrl = "http://localhost/budgetflow_api"; // ✅ FIXED
 
 // ─── Shared headers ──────────────────────────────────────────────────────────
 const Duration _timeout = Duration(seconds: 12);
+
+// Helper to add common headers
+Map<String, String> _getHeaders() {
+  return {'Content-Type': 'application/x-www-form-urlencoded'};
+}
+
+// Helper to safely parse JSON response
+Future<Map<String, dynamic>> _parseResponse(
+  http.Response response,
+  String context,
+) async {
+  print('[$context] Status: ${response.statusCode}');
+  print('[$context] Body: ${response.body}');
+
+  if (response.statusCode != 200) {
+    return {
+      "status": "error",
+      "message": "HTTP ${response.statusCode}: ${response.reasonPhrase}",
+    };
+  }
+
+  if (response.body.isEmpty) {
+    return {"status": "error", "message": "Empty response from server"};
+  }
+
+  try {
+    return json.decode(response.body);
+  } catch (e) {
+    print('[$context] JSON parse error: $e');
+    return {
+      "status": "error",
+      "message": "Invalid JSON response: $e\nRaw: ${response.body}",
+    };
+  }
+}
 
 // ─── LOGIN ───────────────────────────────────────────────────────────────────
 Future<Map<String, dynamic>> login(String email, String password) async {
@@ -18,10 +55,11 @@ Future<Map<String, dynamic>> login(String email, String password) async {
     final res = await http
         .post(
           Uri.parse('$baseUrl/login.php'),
+          headers: _getHeaders(),
           body: {'email': email, 'password': password},
         )
         .timeout(_timeout);
-    return json.decode(res.body);
+    return await _parseResponse(res, 'Login');
   } catch (e) {
     return {"status": "error", "message": "Login failed: $e"};
   }
@@ -38,6 +76,7 @@ Future<Map<String, dynamic>> register(
     final res = await http
         .post(
           Uri.parse('$baseUrl/register.php'),
+          headers: _getHeaders(),
           body: {
             'email': email,
             'password': password,
@@ -46,7 +85,7 @@ Future<Map<String, dynamic>> register(
           },
         )
         .timeout(_timeout);
-    return json.decode(res.body);
+    return await _parseResponse(res, 'Register');
   } catch (e) {
     return {"status": "error", "message": "Registration failed: $e"};
   }
@@ -93,7 +132,7 @@ Future<List<Map<String, dynamic>>> fetchAccounts(int userId) async {
     final res = await http
         .get(Uri.parse('$baseUrl/get_accounts.php?user_id=$userId'))
         .timeout(_timeout);
-    final body = json.decode(res.body);
+    final body = await _parseResponse(res, 'FetchAccounts');
     if (body['status'] == 'success') {
       return (body['data'] as List).map((a) {
         return {
@@ -125,6 +164,7 @@ Future<Map<String, dynamic>> addAccountAPI({
     final res = await http
         .post(
           Uri.parse('$baseUrl/add_account.php'),
+          headers: _getHeaders(),
           body: {
             'user_id': userId.toString(),
             'name': name,
@@ -135,7 +175,7 @@ Future<Map<String, dynamic>> addAccountAPI({
           },
         )
         .timeout(_timeout);
-    return json.decode(res.body);
+    return await _parseResponse(res, 'AddAccount');
   } catch (e) {
     return {"status": "error", "message": "Add account failed: $e"};
   }
@@ -147,7 +187,7 @@ Future<List<Map<String, dynamic>>> fetchTransactions(int userId) async {
     final res = await http
         .get(Uri.parse('$baseUrl/get_transactions.php?user_id=$userId'))
         .timeout(_timeout);
-    final body = json.decode(res.body);
+    final body = await _parseResponse(res, 'FetchTransactions');
     if (body['status'] == 'success') {
       return (body['data'] as List).map((item) {
         return {
@@ -182,23 +222,28 @@ Future<Map<String, dynamic>> addTransactionAPI({
   required String date,
 }) async {
   try {
+    print('[ADD TX] Starting: userId=$userId, title=$title, amount=$amount');
+
     final res = await http
         .post(
           Uri.parse('$baseUrl/add_transaction.php'),
+          headers: _getHeaders(),
           body: {
             'user_id': userId.toString(),
             'title': title,
             'amount': amount.toString(),
             'is_income': isIncome ? "1" : "0",
-            'category': category,
+            'category': category.isEmpty ? 'General' : category,
             'account_id': accountId,
             'note': note,
             'date': date,
           },
         )
         .timeout(_timeout);
-    return json.decode(res.body);
+
+    return await _parseResponse(res, 'AddTransaction');
   } catch (e) {
+    print('[ADD TX] Error: $e');
     return {"status": "error", "message": "Add transaction failed: $e"};
   }
 }
@@ -217,6 +262,7 @@ Future<Map<String, dynamic>> editTransactionAPI({
     final res = await http
         .post(
           Uri.parse('$baseUrl/edit_transaction.php'),
+          headers: _getHeaders(),
           body: {
             'id': id.toString(),
             'user_id': userId.toString(),
@@ -229,7 +275,7 @@ Future<Map<String, dynamic>> editTransactionAPI({
           },
         )
         .timeout(_timeout);
-    return json.decode(res.body);
+    return await _parseResponse(res, 'EditTransaction');
   } catch (e) {
     return {"status": "error", "message": "Edit transaction failed: $e"};
   }
@@ -243,10 +289,11 @@ Future<Map<String, dynamic>> deleteTransactionAPI({
     final res = await http
         .post(
           Uri.parse('$baseUrl/delete_transaction.php'),
+          headers: _getHeaders(),
           body: {'id': id.toString(), 'user_id': userId.toString()},
         )
         .timeout(_timeout);
-    return json.decode(res.body);
+    return await _parseResponse(res, 'DeleteTransaction');
   } catch (e) {
     return {"status": "error", "message": "Delete transaction failed: $e"};
   }
@@ -258,7 +305,7 @@ Future<List<Map<String, dynamic>>> fetchBudgets(int userId) async {
     final res = await http
         .get(Uri.parse('$baseUrl/get_budgets.php?user_id=$userId'))
         .timeout(_timeout);
-    final body = json.decode(res.body);
+    final body = await _parseResponse(res, 'FetchBudgets');
     if (body['status'] == 'success') {
       return (body['data'] as List).map((b) {
         return {
@@ -285,6 +332,7 @@ Future<Map<String, dynamic>> saveBudgetAPI({
     final res = await http
         .post(
           Uri.parse('$baseUrl/save_budget.php'),
+          headers: _getHeaders(),
           body: {
             'user_id': userId.toString(),
             'category': category,
@@ -292,7 +340,7 @@ Future<Map<String, dynamic>> saveBudgetAPI({
           },
         )
         .timeout(_timeout);
-    return json.decode(res.body);
+    return await _parseResponse(res, 'SaveBudget');
   } catch (e) {
     return {"status": "error", "message": "Save budget failed: $e"};
   }
@@ -304,7 +352,7 @@ Future<List<Map<String, dynamic>>> fetchSavingsGoals(int userId) async {
     final res = await http
         .get(Uri.parse('$baseUrl/get_savings.php?user_id=$userId'))
         .timeout(_timeout);
-    final body = json.decode(res.body);
+    final body = await _parseResponse(res, 'FetchSavings');
     if (body['status'] == 'success') {
       return (body['data'] as List).map((g) {
         return {
@@ -335,6 +383,7 @@ Future<Map<String, dynamic>> saveGoalAPI({
     final res = await http
         .post(
           Uri.parse('$baseUrl/save_goal.php'),
+          headers: _getHeaders(),
           body: {
             'user_id': userId.toString(),
             'title': title,
@@ -345,7 +394,7 @@ Future<Map<String, dynamic>> saveGoalAPI({
           },
         )
         .timeout(_timeout);
-    return json.decode(res.body);
+    return await _parseResponse(res, 'SaveGoal');
   } catch (e) {
     return {"status": "error", "message": "Save goal failed: $e"};
   }
@@ -359,4 +408,9 @@ Color _hexToColor(String hex) {
     return Color(int.parse('FF$h', radix: 16));
   }
   return const Color(0xFF0EA974);
+}
+
+// Helper function to format date for API
+String formatDateForAPI(DateTime date) {
+  return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}';
 }
